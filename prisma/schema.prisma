@@ -1,0 +1,878 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  customer
+  chef
+  admin
+}
+
+enum Region {
+  CENTRAL_AFRICA
+  WEST_AFRICA
+  EAST_AFRICA
+  NORTH_AFRICA
+  SOUTHERN_AFRICA
+  OTHER
+}
+
+enum ServiceType {
+  prepared_meals
+  bulk_meal_prep
+  in_home_cooking
+  grocery_shopping
+  special_event
+  postpartum
+  recurring
+}
+
+enum ChefMediaType {
+  image
+  video
+}
+
+enum QuoteStatus {
+  pending
+  accepted
+  declined
+}
+
+enum BookingStatus {
+  requested
+  quoted
+  awaiting_payment
+  confirmed
+  in_progress
+  completed
+  cancelled
+  disputed
+}
+
+enum ChefVerificationStatus {
+  pending
+  approved
+  rejected
+  suspended
+}
+
+enum AllergyReviewStatus {
+  not_required
+  pending
+  accepted
+  declined
+}
+
+enum PermitVerificationStatus {
+  pending
+  verified
+  rejected
+  expired
+}
+
+enum SafetyIncidentStatus {
+  reported
+  under_review
+  escalated
+  resolved
+  closed
+}
+
+enum SafetyIncidentSeverity {
+  urgent
+  high
+  standard
+}
+
+enum ReviewModerationStatus {
+  published
+  under_review
+  hidden
+  removed
+}
+
+enum ReviewReportStatus {
+  pending
+  reviewed
+  dismissed
+}
+
+enum ReviewDisputeStatus {
+  pending
+  appeal_granted
+  appeal_denied
+}
+
+enum StripeConnectedAccountStatus {
+  pending
+  restricted
+  eligible
+}
+
+enum UserVerificationType {
+  email
+  phone
+  identity
+}
+
+enum VerificationStatus {
+  pending
+  verified
+  rejected
+  needs_more_info
+  expired
+  suspended
+}
+
+enum ChefCredentialType {
+  identity
+  food_safety_training
+  business_permit
+  license
+  background_screening
+}
+
+enum MajorAllergen {
+  milk
+  eggs
+  fish
+  crustacean_shellfish
+  tree_nuts
+  peanuts
+  wheat
+  soybeans
+  sesame
+  other
+}
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  name         String
+  email        String    @unique
+  passwordHash String
+  role         UserRole  @default(customer)
+  isActive     Boolean   @default(true)
+  phoneNumberLegacy String?
+  phoneNumberEncrypted String?
+  phoneNumberHash      String?   @unique
+  phoneNumberLast4     String?
+  smsOrderUpdates      Boolean   @default(false)
+  smsOrderUpdatesUpdatedAt DateTime?
+  marketingContactSharing Boolean @default(false)
+  marketingCountryCode String?
+  marketingContactSharingUpdatedAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  chefProfile ChefProfile?
+  customerBookings BookingRequest[] @relation("CustomerBookings")
+  sentMessages Message[] @relation("SentMessages")
+  receivedMessages Message[] @relation("ReceivedMessages")
+  safetyIncidents SafetyIncident[] @relation("IncidentReporter")
+  adminAuditLogs AdminAuditLog[] @relation("AdminActions")
+  reviewsGiven Review[] @relation("CustomerReviews")
+  reviewReports ReviewReport[]
+  verifications UserVerification[]
+  verificationDocuments VerificationDocument[]
+  verificationAuditLogs VerificationAuditLog[] @relation("VerificationAuditActor")
+  verificationReviews VerificationAuditLog[] @relation("VerificationAuditSubject")
+  reportedIncidents SafetyIncident[] @relation("ReportedUserIncidents")
+  serviceAddresses CustomerServiceAddress[]
+
+  @@map("users")
+}
+
+model Country {
+  id                String    @id @default(uuid()) @db.Uuid
+  name              String    @unique
+  code              String    @unique
+  flag              String
+  region            Region
+  cuisineDescription String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  dishCountries DishCountry[]
+  chefMenuEntries ChefMenuEntry[]
+
+  @@map("countries")
+}
+
+model Dish {
+  id          String        @id @default(uuid()) @db.Uuid
+  name        String
+  slug        String        @unique
+  description String
+  category    String?
+  knownIngredients String[] @default([])
+  majorAllergens MajorAllergen[] @default([])
+  crossContactRisks String[] @default([])
+  isApproved  Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  dishCountries DishCountry[]
+  chefDishes    ChefDish[]
+
+  @@map("dishes")
+}
+
+model DishCountry {
+  id        String   @id @default(uuid()) @db.Uuid
+  dishId    String   @db.Uuid
+  countryId String   @db.Uuid
+  notes     String?
+  createdAt DateTime @default(now())
+
+  dish    Dish    @relation(fields: [dishId], references: [id], onDelete: Cascade)
+  country Country @relation(fields: [countryId], references: [id], onDelete: Cascade)
+
+  @@unique([dishId, countryId])
+  @@map("dish_countries")
+}
+
+model ChefProfile {
+  id              String                  @id @default(uuid()) @db.Uuid
+  userId          String                  @unique @db.Uuid
+  displayName     String
+  bio             String?
+  city            String?
+  state           String?
+  countryCode     String?
+  specialties     String[]                @default([])
+  serviceTypes    ServiceType[]           @default([])
+  isPublic        Boolean                 @default(false)
+  latitude        Float?
+  longitude       Float?
+  serviceRadiusKm Int?
+  experienceYears Int?
+  languages       String[]
+  profileImageUrl String?
+  coverImageUrl   String?
+  instagramUrl    String?
+  tiktokUrl       String?
+  youtubeUrl      String?
+  facebookUrl     String?
+  verificationStatus ChefVerificationStatus @default(pending)
+  averageRating   Float?                 @default(0)
+  reviewCount     Int                   @default(0)
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chefDishes  ChefDish[]
+  menuEntries ChefMenuEntry[]
+  menuTemplates ChefMenuTemplate[]
+  quotes      Quote[]
+  bookings    BookingRequest[]
+  groceryReceipts GroceryReceipt[]
+  foodPhotos      ChefFoodPhoto[]
+  serviceAreas    ChefServiceArea[]
+  availability    ChefAvailability[]
+  permits         ChefPermit[]
+  credentials     ChefCredential[]
+  serviceApprovals ChefServiceApproval[]
+  backgroundScreenings BackgroundScreeningRecord[]
+  verificationDocuments VerificationDocument[]
+  safetyIncidents SafetyIncident[]
+  reviews         Review[]
+  reviewResponses ChefReviewResponse[]
+  reviewDisputes  ReviewDispute[]
+  stripeConnectedAccount StripeConnectedAccount?
+
+  @@map("chef_profiles")
+}
+
+model ChefFoodPhoto {
+  id        String   @id @default(uuid()) @db.Uuid
+  chefId    String   @db.Uuid
+  imageUrl  String
+  mediaType ChefMediaType @default(image)
+  caption   String?
+  createdAt DateTime @default(now())
+
+  chef ChefProfile @relation(fields: [chefId], references: [id], onDelete: Cascade)
+
+  @@index([chefId, createdAt])
+  @@map("chef_food_photos")
+}
+
+model ChefServiceArea {
+  id            String   @id @default(uuid()) @db.Uuid
+  chefId        String   @db.Uuid
+  city          String?
+  state         String?
+  countryCode   String?
+  centerLatitude Float?
+  centerLongitude Float?
+  radiusKm      Int      @default(25)
+  offersDelivery Boolean @default(false)
+  offersPickup   Boolean @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  chef ChefProfile @relation(fields: [chefId], references: [id], onDelete: Cascade)
+
+  @@index([city, state, countryCode])
+  @@map("chef_service_areas")
+}
+
+model ChefAvailability {
+  id        String   @id @default(uuid()) @db.Uuid
+  chefId    String   @db.Uuid
+  dayOfWeek Int
+  startTime String
+  endTime   String
+  isAvailable Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  chef ChefProfile @relation(fields: [chefId], references: [id], onDelete: Cascade)
+
+  @@unique([chefId, dayOfWeek, startTime, endTime])
+  @@index([chefId, dayOfWeek, isAvailable])
+  @@map("chef_availability")
+}
+
+model ChefDish {
+  id             String   @id @default(uuid()) @db.Uuid
+  chefId         String   @db.Uuid
+  dishId         String   @db.Uuid
+  price          Decimal  @db.Decimal(10, 2)
+  leadTimeHours  Int      @default(24)
+  availability   String?
+  portionSize    String?
+  description    String?
+  knownIngredients String[] @default([])
+  majorAllergens MajorAllergen[] @default([])
+  crossContactRisks String[] @default([])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  chef ChefProfile @relation(fields: [chefId], references: [id], onDelete: Cascade)
+  dish Dish        @relation(fields: [dishId], references: [id], onDelete: Cascade)
+
+  @@unique([chefId, dishId])
+  @@map("chef_dishes")
+}
+
+model ChefMenuEntry {
+  id                  String        @id @default(uuid()) @db.Uuid
+  chefId              String        @db.Uuid
+  name                String
+  description         String?
+  cuisineCountryId    String?       @db.Uuid
+  knownIngredients    String[]      @default([])
+  majorAllergens      MajorAllergen[] @default([])
+  crossContactRisks   String[]      @default([])
+  isAvailable         Boolean       @default(true)
+  sortOrder           Int           @default(0)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  chef                ChefProfile   @relation(fields: [chefId], references: [id], onDelete: Cascade)
+  cuisineCountry      Country?      @relation(fields: [cuisineCountryId], references: [id], onDelete: SetNull)
+  templateItems       ChefMenuTemplateItem[]
+
+  @@index([chefId, isAvailable, sortOrder])
+  @@index([cuisineCountryId])
+  @@map("chef_menu_entries")
+}
+
+model ChefMenuTemplate {
+  id          String                  @id @default(uuid()) @db.Uuid
+  chefId      String                  @db.Uuid
+  name        String
+  description String?
+  serves      Int?
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  chef        ChefProfile             @relation(fields: [chefId], references: [id], onDelete: Cascade)
+  items       ChefMenuTemplateItem[]
+
+  @@index([chefId, createdAt])
+  @@map("chef_menu_templates")
+}
+
+model ChefMenuTemplateItem {
+  templateId  String          @db.Uuid
+  menuEntryId String          @db.Uuid
+  sortOrder   Int             @default(0)
+
+  template    ChefMenuTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  menuEntry   ChefMenuEntry    @relation(fields: [menuEntryId], references: [id], onDelete: Cascade)
+
+  @@id([templateId, menuEntryId])
+  @@index([menuEntryId])
+  @@map("chef_menu_template_items")
+}
+
+model BookingRequest {
+  id                 String        @id @default(uuid()) @db.Uuid
+  customerId         String        @db.Uuid
+  chefId             String?       @db.Uuid
+  serviceType        ServiceType
+  status             BookingStatus @default(requested)
+  requestedDate      DateTime?
+  desiredDate        DateTime?
+  chefCompletedAt    DateTime?
+  customerCompletedAt DateTime?
+  durationMinutes  Int?
+  serviceEndAt     DateTime?
+  serviceJurisdictionCode String?
+  notes              String?
+  customerServiceAddressId String? @db.Uuid
+  disclosedAllergens MajorAllergen[] @default([])
+  dietaryRestrictions String[] @default([])
+  allergyAcknowledgedAt DateTime?
+  allergyNoticeVersion String?
+  allergyReviewStatus AllergyReviewStatus @default(not_required)
+  allergyReviewedAt DateTime?
+  allergyResponseNote String?
+  budget             Decimal?      @db.Decimal(10, 2)
+  totalAmount        Decimal?      @db.Decimal(10, 2)
+  downPaymentPercent Int           @default(50)
+  finalPaymentDueAt  DateTime?
+  quoteAmount        Decimal?      @db.Decimal(10, 2)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  customer         User             @relation("CustomerBookings", fields: [customerId], references: [id], onDelete: Cascade)
+  chef             ChefProfile?     @relation(fields: [chefId], references: [id], onDelete: SetNull)
+  quotes           Quote[]
+  groceryReceipts  GroceryReceipt[]
+  safetyIncidents SafetyIncident[]
+  review          Review?
+  serviceAddress CustomerServiceAddress? @relation(fields: [customerServiceAddressId], references: [id], onDelete: Restrict)
+
+  @@map("booking_requests")
+  @@index([chefId, desiredDate, status])
+  @@index([customerId, createdAt])
+  @@index([customerServiceAddressId])
+}
+
+model Quote {
+  id                 String      @id @default(uuid()) @db.Uuid
+  bookingRequestId   String      @db.Uuid
+  chefId             String      @db.Uuid
+  status             QuoteStatus @default(pending)
+  amount             Decimal     @db.Decimal(10, 2)
+  downPaymentPercent Int         @default(50)
+  notes              String?
+  acceptedAt         DateTime?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  bookingRequest BookingRequest @relation(fields: [bookingRequestId], references: [id], onDelete: Cascade)
+  chef           ChefProfile    @relation(fields: [chefId], references: [id], onDelete: Cascade)
+
+  @@map("quotes")
+}
+
+model GroceryReceipt {
+  id             String   @id @default(uuid()) @db.Uuid
+  bookingRequestId String   @db.Uuid
+  chefId         String   @db.Uuid
+  fileUrl        String
+  totalSpent     Decimal  @db.Decimal(10, 2)
+  notes          String?
+  uploadedAt     DateTime @default(now())
+
+  bookingRequest BookingRequest @relation(fields: [bookingRequestId], references: [id], onDelete: Cascade)
+  chef           ChefProfile    @relation(fields: [chefId], references: [id], onDelete: Cascade)
+
+  @@map("grocery_receipts")
+}
+
+model Message {
+  id            String   @id @default(uuid()) @db.Uuid
+  senderId      String   @db.Uuid
+  recipientId   String   @db.Uuid
+  content       String
+  createdAt     DateTime @default(now())
+
+  sender        User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient     User     @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@index([senderId, recipientId, createdAt])
+  @@map("messages")
+}
+
+model ChefPermit {
+  id                String                  @id @default(uuid()) @db.Uuid
+  chefId            String                  @db.Uuid
+  permitType        String
+  jurisdictionCode  String
+  serviceType       ServiceType
+  storageObjectKey  String
+  malwareScanStatus String                  @default("pending")
+  issuedAt          DateTime?
+  expiresAt         DateTime?
+  verificationStatus PermitVerificationStatus @default(pending)
+  verifiedAt        DateTime?
+  reviewerNotes     String?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  chef ChefProfile @relation(fields: [chefId], references: [id], onDelete: Cascade)
+
+  @@index([chefId, jurisdictionCode, serviceType, verificationStatus, expiresAt])
+  @@map("chef_permits")
+}
+
+model UserVerification {
+  id                String                 @id @default(uuid()) @db.Uuid
+  userId            String                 @db.Uuid
+  type              UserVerificationType
+  status            VerificationStatus     @default(pending)
+  provider          String?
+  providerReference String?
+  submittedAt       DateTime?
+  verifiedAt        DateTime?
+  expiresAt         DateTime?
+  reviewedAt        DateTime?
+  reviewerNotes     String?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type])
+  @@index([type, status, updatedAt])
+  @@map("user_verifications")
+}
+
+model CustomerServiceAddress {
+  id                String             @id @default(uuid()) @db.Uuid
+  userId            String             @db.Uuid
+  encryptedAddress  String
+  addressHash       String
+  countryCode       String
+  jurisdictionCode  String
+  status            VerificationStatus @default(pending)
+  provider          String?
+  providerReference String?
+  validatedAt       DateTime?
+  expiresAt         DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bookings BookingRequest[]
+
+  @@unique([userId, addressHash])
+  @@index([userId, status, updatedAt])
+  @@map("customer_service_addresses")
+}
+
+model ChefCredential {
+  id                String              @id @default(uuid()) @db.Uuid
+  chefId            String              @db.Uuid
+  type              ChefCredentialType
+  name              String
+  issuer            String?
+  jurisdictionCode  String?
+  serviceType       ServiceType?
+  providerReference String?
+  status            VerificationStatus  @default(pending)
+  issuedAt          DateTime?
+  expiresAt         DateTime?
+  verifiedAt        DateTime?
+  reviewerNotes     String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  chef ChefProfile @relation(fields: [chefId], references: [id], onDelete: Cascade)
+
+  @@index([chefId, type, status, expiresAt])
+  @@map("chef_credentials")
+}
+
+model ChefServiceApproval {
+  id               String             @id @default(uuid()) @db.Uuid
+  chefId           String             @db.Uuid
+  serviceType      ServiceType
+  jurisdictionCode String
+  status           VerificationStatus @default(pending)
+  reviewedAt       DateTime?
+  reviewerNotes    String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  chef ChefProfile @relation(fields: [chefId], references: [id], onDelete: Cascade)
+
+  @@unique([chefId, serviceType, jurisdictionCode])
+  @@index([serviceType, jurisdictionCode, status, updatedAt])
+  @@map("chef_service_approvals")
+}
+
+model BackgroundScreeningRecord {
+  id                String             @id @default(uuid()) @db.Uuid
+  chefId            String             @db.Uuid
+  serviceType       ServiceType
+  jurisdictionCode  String
+  provider          String?
+  providerReference String?
+  status            VerificationStatus @default(pending)
+  consentedAt       DateTime?
+  completedAt       DateTime?
+  expiresAt         DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  chef ChefProfile @relation(fields: [chefId], references: [id], onDelete: Cascade)
+
+  @@index([chefId, serviceType, jurisdictionCode, status, expiresAt])
+  @@map("background_screening_records")
+}
+
+model VerificationDocument {
+  id                String             @id @default(uuid()) @db.Uuid
+  userId            String?            @db.Uuid
+  chefId            String?            @db.Uuid
+  storageObjectKey  String             @unique
+  documentType      String
+  status            VerificationStatus @default(pending)
+  malwareScanStatus String             @default("pending")
+  uploadedAt        DateTime           @default(now())
+  retentionUntil    DateTime?
+  reviewedAt        DateTime?
+  reviewerNotes     String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  user User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chef ChefProfile? @relation(fields: [chefId], references: [id], onDelete: Cascade)
+
+  @@index([status, malwareScanStatus, uploadedAt])
+  @@index([userId, status])
+  @@index([chefId, status])
+  @@map("verification_documents")
+}
+
+model VerificationAuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  actorId     String   @db.Uuid
+  subjectId   String?  @db.Uuid
+  action      String
+  targetType  String
+  targetId    String
+  details     Json?
+  createdAt   DateTime @default(now())
+
+  actor   User  @relation("VerificationAuditActor", fields: [actorId], references: [id], onDelete: Restrict)
+  subject User? @relation("VerificationAuditSubject", fields: [subjectId], references: [id], onDelete: SetNull)
+
+  @@index([targetType, targetId, createdAt])
+  @@index([actorId, createdAt])
+  @@map("verification_audit_logs")
+}
+
+model ComplianceRule {
+  id                       String      @id @default(uuid()) @db.Uuid
+  jurisdictionCode         String
+  serviceType              ServiceType
+  requiresApprovedProvider Boolean     @default(true)
+  requiresServiceApproval Boolean     @default(true)
+  requiresIdentityVerification Boolean @default(true)
+  requiresCustomerIdentityVerification Boolean @default(false)
+  requiresFoodSafetyCredential Boolean @default(false)
+  requiresBackgroundScreening Boolean @default(false)
+  requiredPermitTypes      String[]    @default([])
+  isActive                 Boolean     @default(true)
+  effectiveFrom            DateTime?
+  effectiveUntil           DateTime?
+  sourceReference          String?
+  createdAt                DateTime    @default(now())
+  updatedAt                DateTime    @updatedAt
+
+  @@unique([jurisdictionCode, serviceType])
+  @@map("compliance_rules")
+}
+
+model SafetyIncident {
+  id               String                 @id @default(uuid()) @db.Uuid
+  reporterId       String                 @db.Uuid
+  targetUserId     String?                @db.Uuid
+  chefId           String?                @db.Uuid
+  bookingRequestId String?                @db.Uuid
+  category         String
+  description      String
+  severity         SafetyIncidentSeverity @default(standard)
+  status           SafetyIncidentStatus   @default(reported)
+  urgentReportedAt DateTime?
+  escalatedAt      DateTime?
+  adminNotes       String?
+  chefSuspendedAt  DateTime?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  reporter User           @relation("IncidentReporter", fields: [reporterId], references: [id], onDelete: Restrict)
+  targetUser User?        @relation("ReportedUserIncidents", fields: [targetUserId], references: [id], onDelete: SetNull)
+  chef     ChefProfile?   @relation(fields: [chefId], references: [id], onDelete: SetNull)
+  booking  BookingRequest? @relation(fields: [bookingRequestId], references: [id], onDelete: SetNull)
+
+  @@index([status, severity, createdAt])
+  @@index([chefId, createdAt])
+  @@map("safety_incidents")
+}
+
+model AdminAuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String   @db.Uuid
+  action     String
+  targetType String
+  targetId   String
+  details    Json?
+  createdAt  DateTime @default(now())
+
+  actor User @relation("AdminActions", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([targetType, targetId, createdAt])
+  @@index([actorId, createdAt])
+  @@map("admin_audit_logs")
+}
+
+model StripeConnectedAccount {
+  id                         String                      @id @default(uuid()) @db.Uuid
+  chefId                     String                      @unique @db.Uuid
+  stripeAccountId            String                      @unique
+  countryCode                String
+  status                     StripeConnectedAccountStatus @default(pending)
+  transferCapabilityStatus   String?
+  payoutsEnabled             Boolean                     @default(false)
+  detailsSubmitted           Boolean                     @default(false)
+  requirements               Json?
+  disabledReason             String?
+  connectRefreshTokenHash    String?                     @unique
+  connectRefreshTokenExpiresAt DateTime?
+  connectRefreshTokenUsedAt  DateTime?
+  onboardingCompletedAt      DateTime?
+  lastSyncedAt               DateTime?
+  createdAt                  DateTime                    @default(now())
+  updatedAt                  DateTime                    @updatedAt
+
+  chef ChefProfile @relation(fields: [chefId], references: [id], onDelete: Cascade)
+
+  @@index([status, updatedAt])
+  @@map("stripe_connected_accounts")
+}
+
+model PaymentConfiguration {
+  id                          String   @id @default("default")
+  chefCommissionBps           Int      @default(1500)
+  customerMarketplaceFeeBps   Int      @default(0)
+  updatedAt                   DateTime @updatedAt
+
+  @@map("payment_configurations")
+}
+
+model PaymentWebhookEvent {
+  id            String    @id @default(uuid()) @db.Uuid
+  stripeEventId String    @unique
+  eventType     String
+  livemode      Boolean
+  processedAt   DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+
+  @@index([eventType, createdAt])
+  @@map("payment_webhook_events")
+}
+
+model Review {
+  id                       String                 @id @default(uuid()) @db.Uuid
+  bookingId                String                 @unique @db.Uuid
+  customerId               String                 @db.Uuid
+  chefId                   String                 @db.Uuid
+  rating                   Int
+  reviewText               String?
+  recommended              Boolean
+  foodQuality              Int?
+  communication            Int?
+  punctuality              Int?
+  professionalism          Int?
+  moderationStatus         ReviewModerationStatus @default(published)
+  moderationReason         String?
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
+
+  booking   BookingRequest       @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  customer  User                 @relation("CustomerReviews", fields: [customerId], references: [id], onDelete: Restrict)
+  chef      ChefProfile          @relation(fields: [chefId], references: [id], onDelete: Restrict)
+  photos    ReviewPhoto[]
+  reports   ReviewReport[]
+  response  ChefReviewResponse?
+  dispute   ReviewDispute?
+
+  @@index([chefId, moderationStatus, createdAt])
+  @@index([chefId, moderationStatus, rating])
+  @@map("reviews")
+}
+
+model ReviewPhoto {
+  id        String   @id @default(uuid()) @db.Uuid
+  reviewId  String   @db.Uuid
+  imageUrl  String
+  createdAt DateTime @default(now())
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@index([reviewId, createdAt])
+  @@map("review_photos")
+}
+
+model ReviewReport {
+  id         String            @id @default(uuid()) @db.Uuid
+  reviewId   String            @db.Uuid
+  reporterId String            @db.Uuid
+  reason     String
+  details    String?
+  status     ReviewReportStatus @default(pending)
+  createdAt  DateTime          @default(now())
+  reviewedAt DateTime?
+
+  review   Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  reporter User   @relation(fields: [reporterId], references: [id], onDelete: Restrict)
+
+  @@unique([reviewId, reporterId])
+  @@index([status, createdAt])
+  @@map("review_reports")
+}
+
+model ChefReviewResponse {
+  id        String   @id @default(uuid()) @db.Uuid
+  reviewId  String   @unique @db.Uuid
+  chefId    String   @db.Uuid
+  response  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  review Review      @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  chef   ChefProfile @relation(fields: [chefId], references: [id], onDelete: Cascade)
+
+  @@map("chef_review_responses")
+}
+
+model ReviewDispute {
+  id          String              @id @default(uuid()) @db.Uuid
+  reviewId    String              @unique @db.Uuid
+  chefId      String              @db.Uuid
+  appeal      String
+  status      ReviewDisputeStatus @default(pending)
+  adminNotes  String?
+  reviewedAt  DateTime?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  review Review      @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  chef   ChefProfile @relation(fields: [chefId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@map("review_disputes")
+}

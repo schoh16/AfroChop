@@ -1,22 +1,20 @@
 {
-  "name": "food_app",
-  "version": "1.0.0",
-  "main": "index.ts",
-  "dependencies": {
-    "expo": "~57.0.27",
-    "expo-status-bar": "~57.0.1",
-    "react": "19.2.3",
-    "react-native": "0.86.3"
+  "name": "afrochef-connect",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:mobile": "npm --workspace @afrochef/mobile run start",
+    "dev:api": "npm --workspace @afrochef/api run start:dev",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down",
+    "db:generate": "npm --workspace @afrochef/api run prisma:generate",
+    "db:migrate": "npm --workspace @afrochef/api run prisma:migrate",
+    "db:seed": "npm --workspace @afrochef/api run prisma:seed"
   },
   "devDependencies": {
-    "@types/react": "~19.2.2",
-    "typescript": "~6.0.3"
-  },
-  "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web"
-  },
-  "private": true
+    "typescript": "^5.8.3"
+  }
 }

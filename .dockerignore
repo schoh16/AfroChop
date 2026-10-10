@@ -1,7 +1,11 @@
 node_modules
+apps/mobile/node_modules
+apps/api/node_modules
 .expo
 .git
 .gitignore
+.env
+**/.env
 Dockerfile
 README.md
 npm-debug.log
