@@ -1,7 +1,9 @@
 import { useState, type ReactNode } from 'react';
+import * as Linking from 'expo-linking';
 import {
   ActivityIndicator,
   Image,
+  type ImageSourcePropType,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -13,7 +15,16 @@ import {
   type TextInputProps,
 } from 'react-native';
 
-const welcomeFoodImages = [
+type WelcomeFoodImageItem = {
+  image: ImageSourcePropType;
+  title: string;
+  description: string;
+  accessibilityLabel: string;
+  searchTerm: string;
+  photoCredit?: { label: string; url: string };
+};
+
+const welcomeFoodImages: WelcomeFoodImageItem[] = [
   {
     image: require('../assets/afrochop-ndole-platter.png'),
     title: 'Ndolé-inspired platter',
@@ -28,7 +39,17 @@ const welcomeFoodImages = [
     accessibilityLabel: 'A plate of jollof rice with grilled chicken, plantain, and fresh salad',
     searchTerm: 'Jollof',
   },
-  { image: require('../assets/dishes/achu.jpg'), title: 'Achu', description: 'Cameroon · Cocoyam with yellow soup', accessibilityLabel: 'Achu, cocoyam served with yellow soup', searchTerm: 'Achu' },
+  {
+    image: require('../assets/dishes/achu.jpg'),
+    title: 'Achu',
+    description: 'Cameroon · Cocoyam with yellow soup',
+    accessibilityLabel: 'Cameroonian Achu with yellow soup, cocoyam and vegetables',
+    searchTerm: 'Achu',
+    photoCredit: {
+      label: 'Photo: OlgaEmma · Wikimedia Commons · CC BY-SA 4.0',
+      url: 'https://commons.wikimedia.org/wiki/File:Achu_and_Yellow_Soup_with_vegetable.jpg',
+    },
+  },
   { image: require('../assets/dishes/eru.jpg'), title: 'Eru', description: 'Cameroon · Leafy green stew', accessibilityLabel: 'Eru, a Cameroonian leafy green stew', searchTerm: 'Eru' },
   { image: require('../assets/dishes/ndole.jpg'), title: 'Ndolé', description: 'Cameroon · Bitterleaf stew', accessibilityLabel: 'Ndolé, bitterleaf stew with shrimp', searchTerm: 'Ndolé' },
   { image: require('../assets/dishes/jollof-rice.jpg'), title: 'Jollof Rice', description: 'West Africa · Tomato rice & grilled chicken', accessibilityLabel: 'Jollof rice with grilled chicken and plantain', searchTerm: 'Jollof' },
@@ -260,6 +281,18 @@ export function WelcomeFoodImage() {
           <View style={styles.foodCaption}>
             <Text style={styles.foodCaptionTitle}>{item.title}</Text>
             <Text style={styles.foodCaptionText}>{item.description}</Text>
+            {item.photoCredit ? (
+              <Pressable
+                accessibilityRole="link"
+                accessibilityLabel={`${item.photoCredit.label}. Open photo source and license.`}
+                onPress={() => {
+                  const credit = item.photoCredit;
+                  if (credit) void Linking.openURL(credit.url);
+                }}
+              >
+                <Text style={styles.photoCredit}>{item.photoCredit.label}</Text>
+              </Pressable>
+            ) : null}
           </View>
         </View>
       ))}
@@ -294,6 +327,18 @@ export function FeaturedFoodRail({ onSelectDish }: { onSelectDish: (dish: string
             <View style={styles.featuredFoodCopy}>
               <Text style={styles.featuredFoodTitle}>{item.title}</Text>
               <Text style={styles.featuredFoodDescription}>{item.description}</Text>
+              {item.photoCredit ? (
+                <Pressable
+                  accessibilityRole="link"
+                  accessibilityLabel={`${item.photoCredit.label}. Open photo source and license.`}
+                  onPress={() => {
+                    const credit = item.photoCredit;
+                    if (credit) void Linking.openURL(credit.url);
+                  }}
+                >
+                  <Text style={styles.featuredPhotoCredit}>{item.photoCredit.label}</Text>
+                </Pressable>
+              ) : null}
             </View>
             <Text style={styles.featuredFoodArrow}>›</Text>
           </Pressable>
@@ -424,6 +469,7 @@ const styles = StyleSheet.create({
   foodCaption: { bottom: 0, left: 0, padding: 18, position: 'absolute', right: 0 },
   foodCaptionTitle: { color: '#fff', fontSize: 18, fontWeight: '800' },
   foodCaptionText: { color: '#fff', fontSize: 12, fontWeight: '600', marginTop: 5 },
+  photoCredit: { color: '#fff', fontSize: 9, fontWeight: '600', marginTop: 4 },
   featuredFoodSection: { marginBottom: 20 },
   featuredFoodHeading: { color: colors.brown, fontSize: 20, fontWeight: '800' },
   featuredFoodSubheading: { color: colors.muted, fontSize: 12, marginTop: 3 },
@@ -443,5 +489,6 @@ const styles = StyleSheet.create({
   featuredFoodCopy: { flex: 1, paddingHorizontal: 10 },
   featuredFoodTitle: { color: colors.brown, fontSize: 13, fontWeight: '800' },
   featuredFoodDescription: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 4 },
+  featuredPhotoCredit: { color: colors.muted, fontSize: 8, lineHeight: 12, marginTop: 4 },
   featuredFoodArrow: { color: colors.forest, fontSize: 25, fontWeight: '700', paddingRight: 4 },
 });

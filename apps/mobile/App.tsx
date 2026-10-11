@@ -333,6 +333,30 @@ export default function App() {
     void loadChefs('', null, '', '');
   }
 
+  async function signOutCustomer() {
+    try {
+      await authTokenStorage.remove();
+    } catch (error) {
+      setDiscoveryError(error instanceof Error ? error.message : 'Could not clear saved sign-in.');
+      return;
+    }
+
+    setCustomerSessionToken(null);
+    setCustomerDisplayName(null);
+    setShowFarmers(false);
+    setShowCustomerAuth(false);
+    setCustomerOnboarding(false);
+    setGuideRole(null);
+    setAuthIntent('signin');
+    setEntryStage('role');
+    setBookingOpen(false);
+    setBookingNotice(null);
+    setSelectedChef(null);
+    setChefReviews(null);
+    setDiscoveryError(null);
+    setCustomerAuthMessage(null);
+  }
+
   async function loadChefs(
     search = searchText,
     countryId: string | null = selectedCountryId ?? null,
@@ -825,6 +849,17 @@ export default function App() {
                 ? 'Here are a few quick tips to get started as a customer.'
                 : 'Here are a few quick tips to get started as a cook.'}
             </Text>
+            {guideRole === 'customer' && customerSessionToken ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Sign out of your customer account"
+                onPress={() => void signOutCustomer()}
+                style={styles.guideSkip}
+              >
+                <Text style={styles.linkText}>Sign out</Text>
+              </Pressable>
+            ) : null}
+            {discoveryError ? <Text accessibilityRole="alert" style={styles.stateError}>{discoveryError}</Text> : null}
             {(guideRole === 'customer'
               ? [
                   { title: 'Discover local cooks', body: 'Search by location, cuisine, or name. Open a profile to explore dishes, photos, reviews, and service areas.' },
@@ -888,6 +923,15 @@ export default function App() {
             <Text style={styles.signupIntro}>
               Add a city to find nearby cooks, or skip it and browse anywhere. Location access is optional.
             </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Sign out of your customer account"
+              onPress={() => void signOutCustomer()}
+              style={styles.guideSkip}
+            >
+              <Text style={styles.linkText}>Sign out</Text>
+            </Pressable>
+            {discoveryError ? <Text accessibilityRole="alert" style={styles.stateError}>{discoveryError}</Text> : null}
             <Text style={styles.formSectionTitle}>Where should we look?</Text>
             <LocationDropdowns
               countries={marketCountries}
@@ -1075,6 +1119,7 @@ export default function App() {
           apiBaseUrl={apiBaseUrl}
           countries={marketCountries}
           onBack={() => setShowFarmers(false)}
+          onSignOut={() => void signOutCustomer()}
         />
       ) : chefSessionToken ? (
         <ChefWorkspace
@@ -1491,16 +1536,8 @@ export default function App() {
                 </Pressable>
                 <Pressable
                   accessibilityRole="button"
-                  onPress={() => {
-                    setCustomerSessionToken(null);
-                    setShowFarmers(false);
-                    setCustomerDisplayName(null);
-                    setBookingOpen(false);
-                    setEntryStage('welcome');
-                    void authTokenStorage.remove().catch((error: unknown) => {
-                      setDiscoveryError(error instanceof Error ? error.message : 'Could not clear saved sign-in.');
-                    });
-                  }}
+                  accessibilityLabel="Sign out of your customer account"
+                  onPress={() => void signOutCustomer()}
                   style={styles.cookLink}
                 >
                   <Text style={styles.cookLinkText}>Sign out</Text>
@@ -2363,15 +2400,18 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   topRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: 8,
     marginBottom: 16,
   },
   accountLinks: {
-    alignItems: 'flex-end',
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
     gap: 8,
-    maxWidth: 160,
+    maxWidth: '100%',
   },
   eyebrow: {
     fontSize: 12,

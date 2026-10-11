@@ -17,9 +17,10 @@ type Props = {
   apiBaseUrl: string;
   countries: { code?: string; name: string }[];
   onBack: () => void;
+  onSignOut: () => void;
 };
 
-export function FarmersMarketplace({ token, apiBaseUrl, countries, onBack }: Props) {
+export function FarmersMarketplace({ token, apiBaseUrl, countries, onBack, onSignOut }: Props) {
   const api = useMemo(() => createFarmApi(apiBaseUrl, token), [apiBaseUrl, token]);
   const [farmers, setFarmers] = useState<Farmer[]>([]);
   const [inquiries, setInquiries] = useState<FarmInquiry[]>([]);
@@ -70,15 +71,26 @@ export function FarmersMarketplace({ token, apiBaseUrl, countries, onBack }: Pro
         api={api}
         onBack={() => setSelected(null)}
         onInquirySent={() => void loadInquiries()}
+        onSignOut={onSignOut}
       />
     );
   }
 
   return (
     <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets keyboardDismissMode="on-drag">
-      <Pressable accessibilityRole="button" onPress={onBack} style={s.back}>
-        <Text style={s.link}>‹ Back to cooks</Text>
-      </Pressable>
+      <View style={s.headerActions}>
+        <Pressable accessibilityRole="button" onPress={onBack} style={s.back}>
+          <Text style={s.link}>‹ Back to cooks</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Sign out of your customer account"
+          onPress={onSignOut}
+          style={s.signOut}
+        >
+          <Text style={s.signOutText}>Sign out</Text>
+        </Pressable>
+      </View>
       <Text style={s.title}>🌽 Local farmers</Text>
       <Text style={s.sub}>Fresh corn, okra, garden eggs and African vegetables from farms near you.</Text>
       <View style={s.tabs}>
@@ -166,11 +178,13 @@ function FarmerDetail({
   api,
   onBack,
   onInquirySent,
+  onSignOut,
 }: {
   farmer: Farmer;
   api: ReturnType<typeof createFarmApi>;
   onBack: () => void;
   onInquirySent: () => void;
+  onSignOut: () => void;
 }) {
   const [produceName, setProduceName] = useState('');
   const [quantity, setQuantity] = useState('');
@@ -240,9 +254,19 @@ function FarmerDetail({
 
   return (
     <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets keyboardDismissMode="on-drag">
-      <Pressable accessibilityRole="button" onPress={onBack} style={s.back}>
-        <Text style={s.link}>‹ All farmers</Text>
-      </Pressable>
+      <View style={s.headerActions}>
+        <Pressable accessibilityRole="button" onPress={onBack} style={s.back}>
+          <Text style={s.link}>‹ All farmers</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Sign out of your customer account"
+          onPress={onSignOut}
+          style={s.signOut}
+        >
+          <Text style={s.signOutText}>Sign out</Text>
+        </Pressable>
+      </View>
       <Image source={{ uri: avatarUrl(farmer.farmName, farmer.profileImageUrl) }} style={s.avatarLarge} />
       <Text style={s.title}>🧑🏾‍🌾 {farmer.farmName}</Text>
       <Text style={s.muted}>
@@ -302,9 +326,12 @@ function FarmerDetail({
 
 const s = StyleSheet.create({
   content: { padding: 20, gap: 12, paddingBottom: 48 },
+  headerActions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   avatar: { width: 56, height: 56, borderRadius: 28 },
   avatarLarge: { width: 96, height: 96, borderRadius: 48 },
   back: { paddingVertical: 4 },
+  signOut: { paddingHorizontal: 12, paddingVertical: 9, backgroundColor: '#E8F0E9', borderRadius: 999 },
+  signOutText: { color: c.forest, fontWeight: '800' },
   link: { color: c.forest, fontWeight: '700' },
   title: { color: c.brown, fontSize: 26, fontWeight: '800' },
   sub: { color: c.muted, fontSize: 15 },
