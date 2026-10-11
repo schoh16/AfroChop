@@ -33,6 +33,7 @@ import { ChefWorkspace } from './components/ChefWorkspace';
 import { FarmerAuth, FarmerWorkspace } from './components/FarmerWorkspace';
 import { FarmersMarketplace } from './components/FarmersMarketplace';
 import { authTokenStorage } from './lib/authTokenStorage';
+import { avatarUrl } from './lib/avatar';
 import { CalendarPicker, parseDateKey } from './components/CalendarPicker';
 import { LocationDropdowns } from './components/LocationDropdowns';
 import { FoodMediaItem } from './components/FoodMediaItem';
@@ -1649,8 +1650,8 @@ export default function App() {
             >
               <Text style={styles.linkText}>‹ Back to chefs</Text>
             </Pressable>
-            {selectedChef.profileImageUrl ? (
-              <Image source={{ uri: selectedChef.profileImageUrl }} style={styles.profileImage} />
+            {true ? (
+              <Image source={{ uri: avatarUrl(selectedChef.displayName, selectedChef.profileImageUrl) }} style={styles.profileImage} />
             ) : null}
             <Text style={styles.chefName}>{selectedChef.displayName}</Text>
             <RatingSummary
@@ -1980,8 +1981,8 @@ export default function App() {
               onPress={() => void openChefProfile(chef.id)}
               style={styles.chefCard}
             >
-              {chef.profileImageUrl ? (
-                <Image source={{ uri: chef.profileImageUrl }} style={styles.chefImage} />
+              {true ? (
+                <Image source={{ uri: avatarUrl(chef.displayName, chef.profileImageUrl) }} style={styles.chefImage} />
               ) : (
                 <View style={styles.chefImagePlaceholder}>
                   <Text style={styles.placeholderInitial}>{chef.displayName.charAt(0)}</Text>
