@@ -2026,7 +2026,6 @@ export default function App() {
           <View style={styles.welcomeScreen}>
             <View style={styles.welcomePattern} />
             <AfroChopLogo />
-            <Text style={styles.welcomeEyebrow}>AFRICAN FOOD, MADE PERSONAL</Text>
             <Text style={styles.welcomeTitle}>A Taste of Home,{'\n'}Wherever You Are.</Text>
             <Text style={styles.welcomeTagline}>Find Your Cook. Taste Your Culture.</Text>
             <WelcomeFoodImage />
