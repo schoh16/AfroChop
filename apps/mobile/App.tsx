@@ -1,4 +1,4 @@
-﻿import { StatusBar } from 'expo-status-bar';
+import { StatusBar } from 'expo-status-bar';
 import * as Linking from 'expo-linking';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -30,6 +30,8 @@ import {
   type ReviewSort,
 } from './components/Reviews';
 import { ChefWorkspace } from './components/ChefWorkspace';
+import { FarmerAuth, FarmerWorkspace } from './components/FarmerWorkspace';
+import { FarmersMarketplace } from './components/FarmersMarketplace';
 import { authTokenStorage } from './lib/authTokenStorage';
 import { LocationDropdowns } from './components/LocationDropdowns';
 import { FoodMediaItem } from './components/FoodMediaItem';
@@ -203,6 +205,9 @@ export default function App() {
   const [signupMessage, setSignupMessage] = useState<string | null>(null);
   const [signupLocked, setSignupLocked] = useState(false);
   const [chefSessionToken, setChefSessionToken] = useState<string | null>(null);
+  const [farmerSessionToken, setFarmerSessionToken] = useState<string | null>(null);
+  const [showFarmerAuth, setShowFarmerAuth] = useState(false);
+  const [showFarmers, setShowFarmers] = useState(false);
   const [isExistingCook, setIsExistingCook] = useState(false);
   const [showCustomerAuth, setShowCustomerAuth] = useState(false);
   const [customerName, setCustomerName] = useState('');
@@ -256,10 +261,11 @@ export default function App() {
           name?: unknown;
         };
         if (typeof session.token !== 'string' ||
-            (session.role !== 'chef' && session.role !== 'customer')) {
+            (session.role !== 'chef' && session.role !== 'customer' && session.role !== 'farmer')) {
           throw new Error('Saved sign-in details are invalid. Please sign in again.');
         }
         if (session.role === 'chef') setChefSessionToken(session.token);
+        else if (session.role === 'farmer') setFarmerSessionToken(session.token);
         else {
           setCustomerSessionToken(session.token);
           setCustomerDisplayName(typeof session.name === 'string' ? session.name : null);
@@ -312,6 +318,23 @@ export default function App() {
           : 'Could not save your guide preference.',
       );
     }
+  }
+
+  function resetCustomerHome() {
+    setSelectedChef(null);
+    setChefReviews(null);
+    setBookingOpen(false);
+    setBookingNotice(null);
+    setAllergyAcknowledged(false);
+    setAllergySelections([]);
+    setDietaryNotes('');
+    setQuoteNotes('');
+    setSearchText('');
+    setCity('');
+    setStateRegion('');
+    setSelectedCountryId(undefined);
+    setCustomerOnboarding(false);
+    void loadChefs('', null, '', '');
   }
 
   async function loadChefs(
@@ -1023,6 +1046,34 @@ export default function App() {
             </Pressable>
           </View>
         </AuthScreenLayout>
+      ) : farmerSessionToken ? (
+        <FarmerWorkspace
+          token={farmerSessionToken}
+          apiBaseUrl={apiBaseUrl}
+          onSignOut={() => {
+            setFarmerSessionToken(null);
+            setShowFarmerAuth(false);
+            setEntryStage('welcome');
+            void authTokenStorage.remove().catch(() => undefined);
+          }}
+        />
+      ) : showFarmerAuth ? (
+        <FarmerAuth
+          apiBaseUrl={apiBaseUrl}
+          isSignIn={authIntent === 'signin'}
+          onBack={() => setShowFarmerAuth(false)}
+          onAuthenticated={(token, name) => {
+            void authTokenStorage.set(JSON.stringify({ token, role: 'farmer', name })).catch(() => undefined);
+            setFarmerSessionToken(token);
+            setShowFarmerAuth(false);
+          }}
+        />
+      ) : customerSessionToken && showFarmers ? (
+        <FarmersMarketplace
+          token={customerSessionToken}
+          apiBaseUrl={apiBaseUrl}
+          onBack={() => setShowFarmers(false)}
+        />
       ) : chefSessionToken ? (
         <ChefWorkspace
           token={chefSessionToken}
@@ -1420,16 +1471,29 @@ export default function App() {
         <>
         <View style={styles.topRow}>
           <View>
-            <View style={styles.brandRow}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Go to home and start fresh"
+              onPress={resetCustomerHome}
+              style={styles.brandRow}
+            >
               <Text style={styles.brandMark}>🍲</Text>
               <Text style={styles.eyebrow}>AfroChop</Text>
-            </View>
+              <Text style={styles.homeLinkText}>⌂ Home</Text>
+            </Pressable>
             <Text style={styles.title}>A taste of home, nearby.</Text>
-            <Text style={styles.tagline}>Find African cooks in your neighborhood.</Text>
+            <Text style={styles.tagline}>Find African cooks in your area.</Text>
           </View>
           <View style={styles.accountLinks}>
             {customerSessionToken ? (
               <>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setShowFarmers(true)}
+                  style={styles.preferenceLink}
+                >
+                  <Text style={styles.preferenceLinkText}>🌽 Farmers</Text>
+                </Pressable>
                 <Pressable
                   accessibilityRole="button"
                   onPress={() => setCustomerOnboarding(true)}
@@ -1441,6 +1505,7 @@ export default function App() {
                   accessibilityRole="button"
                   onPress={() => {
                     setCustomerSessionToken(null);
+                    setShowFarmers(false);
                     setCustomerDisplayName(null);
                     setBookingOpen(false);
                     setEntryStage('welcome');
@@ -2031,6 +2096,16 @@ export default function App() {
               }}
             />
             <RoleSelectionCard
+              icon="🌽"
+              title="I’m a Local Farmer"
+              description="Showcase fresh corn, okra and African vegetables to nearby customers."
+              onPress={() => {
+                setShowCustomerAuth(false);
+                setShowChefSignup(false);
+                setShowFarmerAuth(true);
+              }}
+            />
+            <RoleSelectionCard
               icon="👩🏾‍🍳"
               title="I’m a Chef / Cook"
               description="Showcase your cooking and build your AfroChop profile."
@@ -2357,6 +2432,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   preferenceLink: { minHeight: 36, justifyContent: 'center', paddingHorizontal: 10 },
+  homeLinkText: { color: colors.forest, fontSize: 12, fontWeight: '800', marginLeft: 6 },
   preferenceLinkText: { color: colors.forest, fontSize: 11, fontWeight: '700' },
   locationBlock: {
     backgroundColor: '#fff',

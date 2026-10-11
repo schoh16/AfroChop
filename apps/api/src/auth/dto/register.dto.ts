@@ -3,6 +3,7 @@ import { IsBoolean, IsEmail, IsEnum, IsNotEmpty, IsOptional, MinLength } from 'c
 export enum RegisterRole {
   CUSTOMER = 'customer',
   CHEF = 'chef',
+  FARMER = 'farmer',
 }
 
 export class RegisterDto {

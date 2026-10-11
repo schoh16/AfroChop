@@ -5,6 +5,7 @@ import { AppService } from './app.service.js';
 import { AuthModule } from './auth/auth.module.js';
 import { CatalogModule } from './catalog/catalog.module.js';
 import { ChefsModule } from './chefs/chefs.module.js';
+import { FarmersModule } from './farmers/farmers.module.js';
 import { HealthModule } from './health/health.module.js';
 import { MessagesModule } from './messages/messages.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
@@ -24,6 +25,7 @@ import { SafetyModule } from './safety/safety.module.js';
     HealthModule,
     CatalogModule,
     ChefsModule,
+    FarmersModule,
     MessagesModule,
     PaymentsModule,
     QuotesModule,

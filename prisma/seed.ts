@@ -404,6 +404,71 @@ async function seedDevComplianceFixtures() {
   });
 }
 
+const demoFarmers = [
+  {
+    email: 'demo.farmer01@afrochop.local',
+    name: 'Kofi Demo Farm',
+    city: 'Upper Marlboro',
+    produce: [
+      { name: 'Fresh Corn', category: 'vegetable', price: 0.75, unit: 'ear' },
+      { name: 'Okra', category: 'vegetable', price: 4.5, unit: 'lb' },
+      { name: 'Garden Eggs (African Eggplant)', category: 'vegetable', price: 5, unit: 'lb' },
+    ],
+  },
+  {
+    email: 'demo.farmer02@afrochop.local',
+    name: 'Adaeze Demo Gardens',
+    city: 'Frederick',
+    produce: [
+      { name: 'Ugu (Fluted Pumpkin Leaves)', category: 'vegetable', price: 3, unit: 'bunch' },
+      { name: 'Scotch Bonnet Peppers', category: 'vegetable', price: 6, unit: 'lb' },
+      { name: 'Cassava', category: 'tuber', price: 2.5, unit: 'lb' },
+    ],
+  },
+  {
+    email: 'demo.farmer03@afrochop.local',
+    name: 'Mamadou Demo Acres',
+    city: 'Silver Spring',
+    produce: [
+      { name: 'Collard Greens', category: 'vegetable', price: 2.5, unit: 'bunch' },
+      { name: 'Sweet Potatoes', category: 'tuber', price: 1.8, unit: 'lb' },
+      { name: 'Fresh Okra', category: 'vegetable', price: 4, unit: 'lb' },
+    ],
+  },
+];
+
+async function seedDemoFarmers() {
+  const passwordHash = await bcrypt.hash('Password123!', 10);
+  for (const demo of demoFarmers) {
+    const user = await prisma.user.upsert({
+      where: { email: demo.email },
+      update: {},
+      create: { email: demo.email, name: demo.name, passwordHash, role: UserRole.farmer, isActive: true },
+      select: { id: true },
+    });
+    const farmer = await prisma.farmerProfile.upsert({
+      where: { userId: user.id },
+      update: {},
+      create: {
+        userId: user.id,
+        farmName: demo.name,
+        bio: 'Fictional local test farm. Not a real farmer.',
+        city: demo.city,
+        state: 'MD',
+        countryCode: 'US',
+        offersPickup: true,
+        offersDelivery: true,
+      },
+      select: { id: true },
+    });
+    if ((await prisma.farmProduce.count({ where: { farmerId: farmer.id } })) === 0) {
+      await prisma.farmProduce.createMany({
+        data: demo.produce.map((item) => ({ ...item, farmerId: farmer.id })),
+      });
+    }
+  }
+}
+
 async function main() {
   await seedUsers();
   await seedCountries();
@@ -411,6 +476,7 @@ async function main() {
   await seedDishCountries();
   await seedSampleChef();
   await seedMarylandDemoChefs();
+  await seedDemoFarmers();
   await seedDevComplianceFixtures();
 }
 

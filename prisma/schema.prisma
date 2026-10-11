@@ -10,6 +10,7 @@ datasource db {
 enum UserRole {
   customer
   chef
+  farmer
   admin
 }
 
@@ -151,70 +152,72 @@ enum MajorAllergen {
 }
 
 model User {
-  id           String    @id @default(uuid()) @db.Uuid
-  name         String
-  email        String    @unique
-  passwordHash String
-  role         UserRole  @default(customer)
-  isActive     Boolean   @default(true)
-  phoneNumberLegacy String?
-  phoneNumberEncrypted String?
-  phoneNumberHash      String?   @unique
-  phoneNumberLast4     String?
-  smsOrderUpdates      Boolean   @default(false)
-  smsOrderUpdatesUpdatedAt DateTime?
-  marketingContactSharing Boolean @default(false)
-  marketingCountryCode String?
+  id                               String    @id @default(uuid()) @db.Uuid
+  name                             String
+  email                            String    @unique
+  passwordHash                     String
+  role                             UserRole  @default(customer)
+  isActive                         Boolean   @default(true)
+  phoneNumberLegacy                String?
+  phoneNumberEncrypted             String?
+  phoneNumberHash                  String?   @unique
+  phoneNumberLast4                 String?
+  smsOrderUpdates                  Boolean   @default(false)
+  smsOrderUpdatesUpdatedAt         DateTime?
+  marketingContactSharing          Boolean   @default(false)
+  marketingCountryCode             String?
   marketingContactSharingUpdatedAt DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt                        DateTime  @default(now())
+  updatedAt                        DateTime  @updatedAt
 
-  chefProfile ChefProfile?
-  customerBookings BookingRequest[] @relation("CustomerBookings")
-  sentMessages Message[] @relation("SentMessages")
-  receivedMessages Message[] @relation("ReceivedMessages")
-  safetyIncidents SafetyIncident[] @relation("IncidentReporter")
-  adminAuditLogs AdminAuditLog[] @relation("AdminActions")
-  reviewsGiven Review[] @relation("CustomerReviews")
-  reviewReports ReviewReport[]
-  verifications UserVerification[]
+  chefProfile           ChefProfile?
+  farmerProfile         FarmerProfile?
+  farmInquiries         FarmInquiry[]            @relation("CustomerFarmInquiries")
+  customerBookings      BookingRequest[]         @relation("CustomerBookings")
+  sentMessages          Message[]                @relation("SentMessages")
+  receivedMessages      Message[]                @relation("ReceivedMessages")
+  safetyIncidents       SafetyIncident[]         @relation("IncidentReporter")
+  adminAuditLogs        AdminAuditLog[]          @relation("AdminActions")
+  reviewsGiven          Review[]                 @relation("CustomerReviews")
+  reviewReports         ReviewReport[]
+  verifications         UserVerification[]
   verificationDocuments VerificationDocument[]
-  verificationAuditLogs VerificationAuditLog[] @relation("VerificationAuditActor")
-  verificationReviews VerificationAuditLog[] @relation("VerificationAuditSubject")
-  reportedIncidents SafetyIncident[] @relation("ReportedUserIncidents")
-  serviceAddresses CustomerServiceAddress[]
+  verificationAuditLogs VerificationAuditLog[]   @relation("VerificationAuditActor")
+  verificationReviews   VerificationAuditLog[]   @relation("VerificationAuditSubject")
+  reportedIncidents     SafetyIncident[]         @relation("ReportedUserIncidents")
+  serviceAddresses      CustomerServiceAddress[]
 
   @@map("users")
 }
 
 model Country {
-  id                String    @id @default(uuid()) @db.Uuid
-  name              String    @unique
-  code              String    @unique
-  flag              String
-  region            Region
+  id                 String   @id @default(uuid()) @db.Uuid
+  name               String   @unique
+  code               String   @unique
+  flag               String
+  region             Region
   cuisineDescription String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  dishCountries DishCountry[]
+  dishCountries   DishCountry[]
   chefMenuEntries ChefMenuEntry[]
 
   @@map("countries")
 }
 
 model Dish {
-  id          String        @id @default(uuid()) @db.Uuid
-  name        String
-  slug        String        @unique
-  description String
-  category    String?
-  knownIngredients String[] @default([])
-  majorAllergens MajorAllergen[] @default([])
-  crossContactRisks String[] @default([])
-  isApproved  Boolean       @default(true)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id                String          @id @default(uuid()) @db.Uuid
+  name              String
+  slug              String          @unique
+  description       String
+  category          String?
+  knownIngredients  String[]        @default([])
+  majorAllergens    MajorAllergen[] @default([])
+  crossContactRisks String[]        @default([])
+  isApproved        Boolean         @default(true)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 
   dishCountries DishCountry[]
   chefDishes    ChefDish[]
@@ -237,64 +240,64 @@ model DishCountry {
 }
 
 model ChefProfile {
-  id              String                  @id @default(uuid()) @db.Uuid
-  userId          String                  @unique @db.Uuid
-  displayName     String
-  bio             String?
-  city            String?
-  state           String?
-  countryCode     String?
-  specialties     String[]                @default([])
-  serviceTypes    ServiceType[]           @default([])
-  isPublic        Boolean                 @default(false)
-  latitude        Float?
-  longitude       Float?
-  serviceRadiusKm Int?
-  experienceYears Int?
-  languages       String[]
-  profileImageUrl String?
-  coverImageUrl   String?
-  instagramUrl    String?
-  tiktokUrl       String?
-  youtubeUrl      String?
-  facebookUrl     String?
+  id                 String                 @id @default(uuid()) @db.Uuid
+  userId             String                 @unique @db.Uuid
+  displayName        String
+  bio                String?
+  city               String?
+  state              String?
+  countryCode        String?
+  specialties        String[]               @default([])
+  serviceTypes       ServiceType[]          @default([])
+  isPublic           Boolean                @default(false)
+  latitude           Float?
+  longitude          Float?
+  serviceRadiusKm    Int?
+  experienceYears    Int?
+  languages          String[]
+  profileImageUrl    String?
+  coverImageUrl      String?
+  instagramUrl       String?
+  tiktokUrl          String?
+  youtubeUrl         String?
+  facebookUrl        String?
   verificationStatus ChefVerificationStatus @default(pending)
-  averageRating   Float?                 @default(0)
-  reviewCount     Int                   @default(0)
-  createdAt       DateTime                @default(now())
-  updatedAt       DateTime                @updatedAt
+  averageRating      Float?                 @default(0)
+  reviewCount        Int                    @default(0)
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
 
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  chefDishes  ChefDish[]
-  menuEntries ChefMenuEntry[]
-  menuTemplates ChefMenuTemplate[]
-  quotes      Quote[]
-  bookings    BookingRequest[]
-  groceryReceipts GroceryReceipt[]
-  foodPhotos      ChefFoodPhoto[]
-  serviceAreas    ChefServiceArea[]
-  availability    ChefAvailability[]
-  permits         ChefPermit[]
-  credentials     ChefCredential[]
-  serviceApprovals ChefServiceApproval[]
-  backgroundScreenings BackgroundScreeningRecord[]
-  verificationDocuments VerificationDocument[]
-  safetyIncidents SafetyIncident[]
-  reviews         Review[]
-  reviewResponses ChefReviewResponse[]
-  reviewDisputes  ReviewDispute[]
+  user                   User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chefDishes             ChefDish[]
+  menuEntries            ChefMenuEntry[]
+  menuTemplates          ChefMenuTemplate[]
+  quotes                 Quote[]
+  bookings               BookingRequest[]
+  groceryReceipts        GroceryReceipt[]
+  foodPhotos             ChefFoodPhoto[]
+  serviceAreas           ChefServiceArea[]
+  availability           ChefAvailability[]
+  permits                ChefPermit[]
+  credentials            ChefCredential[]
+  serviceApprovals       ChefServiceApproval[]
+  backgroundScreenings   BackgroundScreeningRecord[]
+  verificationDocuments  VerificationDocument[]
+  safetyIncidents        SafetyIncident[]
+  reviews                Review[]
+  reviewResponses        ChefReviewResponse[]
+  reviewDisputes         ReviewDispute[]
   stripeConnectedAccount StripeConnectedAccount?
 
   @@map("chef_profiles")
 }
 
 model ChefFoodPhoto {
-  id        String   @id @default(uuid()) @db.Uuid
-  chefId    String   @db.Uuid
+  id        String        @id @default(uuid()) @db.Uuid
+  chefId    String        @db.Uuid
   imageUrl  String
   mediaType ChefMediaType @default(image)
   caption   String?
-  createdAt DateTime @default(now())
+  createdAt DateTime      @default(now())
 
   chef ChefProfile @relation(fields: [chefId], references: [id], onDelete: Cascade)
 
@@ -303,18 +306,18 @@ model ChefFoodPhoto {
 }
 
 model ChefServiceArea {
-  id            String   @id @default(uuid()) @db.Uuid
-  chefId        String   @db.Uuid
-  city          String?
-  state         String?
-  countryCode   String?
-  centerLatitude Float?
+  id              String   @id @default(uuid()) @db.Uuid
+  chefId          String   @db.Uuid
+  city            String?
+  state           String?
+  countryCode     String?
+  centerLatitude  Float?
   centerLongitude Float?
-  radiusKm      Int      @default(25)
-  offersDelivery Boolean @default(false)
-  offersPickup   Boolean @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  radiusKm        Int      @default(25)
+  offersDelivery  Boolean  @default(false)
+  offersPickup    Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   chef ChefProfile @relation(fields: [chefId], references: [id], onDelete: Cascade)
 
@@ -323,14 +326,14 @@ model ChefServiceArea {
 }
 
 model ChefAvailability {
-  id        String   @id @default(uuid()) @db.Uuid
-  chefId    String   @db.Uuid
-  dayOfWeek Int
-  startTime String
-  endTime   String
-  isAvailable Boolean @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(uuid()) @db.Uuid
+  chefId      String   @db.Uuid
+  dayOfWeek   Int
+  startTime   String
+  endTime     String
+  isAvailable Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   chef ChefProfile @relation(fields: [chefId], references: [id], onDelete: Cascade)
 
@@ -340,19 +343,19 @@ model ChefAvailability {
 }
 
 model ChefDish {
-  id             String   @id @default(uuid()) @db.Uuid
-  chefId         String   @db.Uuid
-  dishId         String   @db.Uuid
-  price          Decimal  @db.Decimal(10, 2)
-  leadTimeHours  Int      @default(24)
-  availability   String?
-  portionSize    String?
-  description    String?
-  knownIngredients String[] @default([])
-  majorAllergens MajorAllergen[] @default([])
-  crossContactRisks String[] @default([])
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                String          @id @default(uuid()) @db.Uuid
+  chefId            String          @db.Uuid
+  dishId            String          @db.Uuid
+  price             Decimal         @db.Decimal(10, 2)
+  leadTimeHours     Int             @default(24)
+  availability      String?
+  portionSize       String?
+  description       String?
+  knownIngredients  String[]        @default([])
+  majorAllergens    MajorAllergen[] @default([])
+  crossContactRisks String[]        @default([])
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 
   chef ChefProfile @relation(fields: [chefId], references: [id], onDelete: Cascade)
   dish Dish        @relation(fields: [dishId], references: [id], onDelete: Cascade)
@@ -362,22 +365,22 @@ model ChefDish {
 }
 
 model ChefMenuEntry {
-  id                  String        @id @default(uuid()) @db.Uuid
-  chefId              String        @db.Uuid
-  name                String
-  description         String?
-  cuisineCountryId    String?       @db.Uuid
-  knownIngredients    String[]      @default([])
-  majorAllergens      MajorAllergen[] @default([])
-  crossContactRisks   String[]      @default([])
-  isAvailable         Boolean       @default(true)
-  sortOrder           Int           @default(0)
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @updatedAt
+  id                String          @id @default(uuid()) @db.Uuid
+  chefId            String          @db.Uuid
+  name              String
+  description       String?
+  cuisineCountryId  String?         @db.Uuid
+  knownIngredients  String[]        @default([])
+  majorAllergens    MajorAllergen[] @default([])
+  crossContactRisks String[]        @default([])
+  isAvailable       Boolean         @default(true)
+  sortOrder         Int             @default(0)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 
-  chef                ChefProfile   @relation(fields: [chefId], references: [id], onDelete: Cascade)
-  cuisineCountry      Country?      @relation(fields: [cuisineCountryId], references: [id], onDelete: SetNull)
-  templateItems       ChefMenuTemplateItem[]
+  chef           ChefProfile            @relation(fields: [chefId], references: [id], onDelete: Cascade)
+  cuisineCountry Country?               @relation(fields: [cuisineCountryId], references: [id], onDelete: SetNull)
+  templateItems  ChefMenuTemplateItem[]
 
   @@index([chefId, isAvailable, sortOrder])
   @@index([cuisineCountryId])
@@ -385,28 +388,28 @@ model ChefMenuEntry {
 }
 
 model ChefMenuTemplate {
-  id          String                  @id @default(uuid()) @db.Uuid
-  chefId      String                  @db.Uuid
+  id          String   @id @default(uuid()) @db.Uuid
+  chefId      String   @db.Uuid
   name        String
   description String?
   serves      Int?
-  createdAt   DateTime                @default(now())
-  updatedAt   DateTime                @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  chef        ChefProfile             @relation(fields: [chefId], references: [id], onDelete: Cascade)
-  items       ChefMenuTemplateItem[]
+  chef  ChefProfile            @relation(fields: [chefId], references: [id], onDelete: Cascade)
+  items ChefMenuTemplateItem[]
 
   @@index([chefId, createdAt])
   @@map("chef_menu_templates")
 }
 
 model ChefMenuTemplateItem {
-  templateId  String          @db.Uuid
-  menuEntryId String          @db.Uuid
-  sortOrder   Int             @default(0)
+  templateId  String @db.Uuid
+  menuEntryId String @db.Uuid
+  sortOrder   Int    @default(0)
 
-  template    ChefMenuTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
-  menuEntry   ChefMenuEntry    @relation(fields: [menuEntryId], references: [id], onDelete: Cascade)
+  template  ChefMenuTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  menuEntry ChefMenuEntry    @relation(fields: [menuEntryId], references: [id], onDelete: Cascade)
 
   @@id([templateId, menuEntryId])
   @@index([menuEntryId])
@@ -414,47 +417,47 @@ model ChefMenuTemplateItem {
 }
 
 model BookingRequest {
-  id                 String        @id @default(uuid()) @db.Uuid
-  customerId         String        @db.Uuid
-  chefId             String?       @db.Uuid
-  serviceType        ServiceType
-  status             BookingStatus @default(requested)
-  requestedDate      DateTime?
-  desiredDate        DateTime?
-  chefCompletedAt    DateTime?
-  customerCompletedAt DateTime?
-  durationMinutes  Int?
-  serviceEndAt     DateTime?
-  serviceJurisdictionCode String?
-  notes              String?
-  customerServiceAddressId String? @db.Uuid
-  disclosedAllergens MajorAllergen[] @default([])
-  dietaryRestrictions String[] @default([])
-  allergyAcknowledgedAt DateTime?
-  allergyNoticeVersion String?
-  allergyReviewStatus AllergyReviewStatus @default(not_required)
-  allergyReviewedAt DateTime?
-  allergyResponseNote String?
-  budget             Decimal?      @db.Decimal(10, 2)
-  totalAmount        Decimal?      @db.Decimal(10, 2)
-  downPaymentPercent Int           @default(50)
-  finalPaymentDueAt  DateTime?
-  quoteAmount        Decimal?      @db.Decimal(10, 2)
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @updatedAt
+  id                       String              @id @default(uuid()) @db.Uuid
+  customerId               String              @db.Uuid
+  chefId                   String?             @db.Uuid
+  serviceType              ServiceType
+  status                   BookingStatus       @default(requested)
+  requestedDate            DateTime?
+  desiredDate              DateTime?
+  chefCompletedAt          DateTime?
+  customerCompletedAt      DateTime?
+  durationMinutes          Int?
+  serviceEndAt             DateTime?
+  serviceJurisdictionCode  String?
+  notes                    String?
+  customerServiceAddressId String?             @db.Uuid
+  disclosedAllergens       MajorAllergen[]     @default([])
+  dietaryRestrictions      String[]            @default([])
+  allergyAcknowledgedAt    DateTime?
+  allergyNoticeVersion     String?
+  allergyReviewStatus      AllergyReviewStatus @default(not_required)
+  allergyReviewedAt        DateTime?
+  allergyResponseNote      String?
+  budget                   Decimal?            @db.Decimal(10, 2)
+  totalAmount              Decimal?            @db.Decimal(10, 2)
+  downPaymentPercent       Int                 @default(50)
+  finalPaymentDueAt        DateTime?
+  quoteAmount              Decimal?            @db.Decimal(10, 2)
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
 
-  customer         User             @relation("CustomerBookings", fields: [customerId], references: [id], onDelete: Cascade)
-  chef             ChefProfile?     @relation(fields: [chefId], references: [id], onDelete: SetNull)
-  quotes           Quote[]
-  groceryReceipts  GroceryReceipt[]
+  customer        User                    @relation("CustomerBookings", fields: [customerId], references: [id], onDelete: Cascade)
+  chef            ChefProfile?            @relation(fields: [chefId], references: [id], onDelete: SetNull)
+  quotes          Quote[]
+  groceryReceipts GroceryReceipt[]
   safetyIncidents SafetyIncident[]
   review          Review?
-  serviceAddress CustomerServiceAddress? @relation(fields: [customerServiceAddressId], references: [id], onDelete: Restrict)
+  serviceAddress  CustomerServiceAddress? @relation(fields: [customerServiceAddressId], references: [id], onDelete: Restrict)
 
-  @@map("booking_requests")
   @@index([chefId, desiredDate, status])
   @@index([customerId, createdAt])
   @@index([customerServiceAddressId])
+  @@map("booking_requests")
 }
 
 model Quote {
@@ -476,13 +479,13 @@ model Quote {
 }
 
 model GroceryReceipt {
-  id             String   @id @default(uuid()) @db.Uuid
+  id               String   @id @default(uuid()) @db.Uuid
   bookingRequestId String   @db.Uuid
-  chefId         String   @db.Uuid
-  fileUrl        String
-  totalSpent     Decimal  @db.Decimal(10, 2)
-  notes          String?
-  uploadedAt     DateTime @default(now())
+  chefId           String   @db.Uuid
+  fileUrl          String
+  totalSpent       Decimal  @db.Decimal(10, 2)
+  notes            String?
+  uploadedAt       DateTime @default(now())
 
   bookingRequest BookingRequest @relation(fields: [bookingRequestId], references: [id], onDelete: Cascade)
   chef           ChefProfile    @relation(fields: [chefId], references: [id], onDelete: Cascade)
@@ -491,34 +494,34 @@ model GroceryReceipt {
 }
 
 model Message {
-  id            String   @id @default(uuid()) @db.Uuid
-  senderId      String   @db.Uuid
-  recipientId   String   @db.Uuid
-  content       String
-  createdAt     DateTime @default(now())
+  id          String   @id @default(uuid()) @db.Uuid
+  senderId    String   @db.Uuid
+  recipientId String   @db.Uuid
+  content     String
+  createdAt   DateTime @default(now())
 
-  sender        User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
-  recipient     User     @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: Cascade)
+  sender    User @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient User @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: Cascade)
 
   @@index([senderId, recipientId, createdAt])
   @@map("messages")
 }
 
 model ChefPermit {
-  id                String                  @id @default(uuid()) @db.Uuid
-  chefId            String                  @db.Uuid
-  permitType        String
-  jurisdictionCode  String
-  serviceType       ServiceType
-  storageObjectKey  String
-  malwareScanStatus String                  @default("pending")
-  issuedAt          DateTime?
-  expiresAt         DateTime?
+  id                 String                   @id @default(uuid()) @db.Uuid
+  chefId             String                   @db.Uuid
+  permitType         String
+  jurisdictionCode   String
+  serviceType        ServiceType
+  storageObjectKey   String
+  malwareScanStatus  String                   @default("pending")
+  issuedAt           DateTime?
+  expiresAt          DateTime?
   verificationStatus PermitVerificationStatus @default(pending)
-  verifiedAt        DateTime?
-  reviewerNotes     String?
-  createdAt         DateTime                @default(now())
-  updatedAt         DateTime                @updatedAt
+  verifiedAt         DateTime?
+  reviewerNotes      String?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
 
   chef ChefProfile @relation(fields: [chefId], references: [id], onDelete: Cascade)
 
@@ -527,10 +530,10 @@ model ChefPermit {
 }
 
 model UserVerification {
-  id                String                 @id @default(uuid()) @db.Uuid
-  userId            String                 @db.Uuid
+  id                String               @id @default(uuid()) @db.Uuid
+  userId            String               @db.Uuid
   type              UserVerificationType
-  status            VerificationStatus     @default(pending)
+  status            VerificationStatus   @default(pending)
   provider          String?
   providerReference String?
   submittedAt       DateTime?
@@ -538,8 +541,8 @@ model UserVerification {
   expiresAt         DateTime?
   reviewedAt        DateTime?
   reviewerNotes     String?
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -572,21 +575,21 @@ model CustomerServiceAddress {
 }
 
 model ChefCredential {
-  id                String              @id @default(uuid()) @db.Uuid
-  chefId            String              @db.Uuid
+  id                String             @id @default(uuid()) @db.Uuid
+  chefId            String             @db.Uuid
   type              ChefCredentialType
   name              String
   issuer            String?
   jurisdictionCode  String?
   serviceType       ServiceType?
   providerReference String?
-  status            VerificationStatus  @default(pending)
+  status            VerificationStatus @default(pending)
   issuedAt          DateTime?
   expiresAt         DateTime?
   verifiedAt        DateTime?
   reviewerNotes     String?
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
 
   chef ChefProfile @relation(fields: [chefId], references: [id], onDelete: Cascade)
 
@@ -657,14 +660,14 @@ model VerificationDocument {
 }
 
 model VerificationAuditLog {
-  id          String   @id @default(uuid()) @db.Uuid
-  actorId     String   @db.Uuid
-  subjectId   String?  @db.Uuid
-  action      String
-  targetType  String
-  targetId    String
-  details     Json?
-  createdAt   DateTime @default(now())
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String   @db.Uuid
+  subjectId  String?  @db.Uuid
+  action     String
+  targetType String
+  targetId   String
+  details    Json?
+  createdAt  DateTime @default(now())
 
   actor   User  @relation("VerificationAuditActor", fields: [actorId], references: [id], onDelete: Restrict)
   subject User? @relation("VerificationAuditSubject", fields: [subjectId], references: [id], onDelete: SetNull)
@@ -675,22 +678,22 @@ model VerificationAuditLog {
 }
 
 model ComplianceRule {
-  id                       String      @id @default(uuid()) @db.Uuid
-  jurisdictionCode         String
-  serviceType              ServiceType
-  requiresApprovedProvider Boolean     @default(true)
-  requiresServiceApproval Boolean     @default(true)
-  requiresIdentityVerification Boolean @default(true)
-  requiresCustomerIdentityVerification Boolean @default(false)
-  requiresFoodSafetyCredential Boolean @default(false)
-  requiresBackgroundScreening Boolean @default(false)
-  requiredPermitTypes      String[]    @default([])
-  isActive                 Boolean     @default(true)
-  effectiveFrom            DateTime?
-  effectiveUntil           DateTime?
-  sourceReference          String?
-  createdAt                DateTime    @default(now())
-  updatedAt                DateTime    @updatedAt
+  id                                   String      @id @default(uuid()) @db.Uuid
+  jurisdictionCode                     String
+  serviceType                          ServiceType
+  requiresApprovedProvider             Boolean     @default(true)
+  requiresServiceApproval              Boolean     @default(true)
+  requiresIdentityVerification         Boolean     @default(true)
+  requiresCustomerIdentityVerification Boolean     @default(false)
+  requiresFoodSafetyCredential         Boolean     @default(false)
+  requiresBackgroundScreening          Boolean     @default(false)
+  requiredPermitTypes                  String[]    @default([])
+  isActive                             Boolean     @default(true)
+  effectiveFrom                        DateTime?
+  effectiveUntil                       DateTime?
+  sourceReference                      String?
+  createdAt                            DateTime    @default(now())
+  updatedAt                            DateTime    @updatedAt
 
   @@unique([jurisdictionCode, serviceType])
   @@map("compliance_rules")
@@ -713,10 +716,10 @@ model SafetyIncident {
   createdAt        DateTime               @default(now())
   updatedAt        DateTime               @updatedAt
 
-  reporter User           @relation("IncidentReporter", fields: [reporterId], references: [id], onDelete: Restrict)
-  targetUser User?        @relation("ReportedUserIncidents", fields: [targetUserId], references: [id], onDelete: SetNull)
-  chef     ChefProfile?   @relation(fields: [chefId], references: [id], onDelete: SetNull)
-  booking  BookingRequest? @relation(fields: [bookingRequestId], references: [id], onDelete: SetNull)
+  reporter   User            @relation("IncidentReporter", fields: [reporterId], references: [id], onDelete: Restrict)
+  targetUser User?           @relation("ReportedUserIncidents", fields: [targetUserId], references: [id], onDelete: SetNull)
+  chef       ChefProfile?    @relation(fields: [chefId], references: [id], onDelete: SetNull)
+  booking    BookingRequest? @relation(fields: [bookingRequestId], references: [id], onDelete: SetNull)
 
   @@index([status, severity, createdAt])
   @@index([chefId, createdAt])
@@ -740,23 +743,23 @@ model AdminAuditLog {
 }
 
 model StripeConnectedAccount {
-  id                         String                      @id @default(uuid()) @db.Uuid
-  chefId                     String                      @unique @db.Uuid
-  stripeAccountId            String                      @unique
-  countryCode                String
-  status                     StripeConnectedAccountStatus @default(pending)
-  transferCapabilityStatus   String?
-  payoutsEnabled             Boolean                     @default(false)
-  detailsSubmitted           Boolean                     @default(false)
-  requirements               Json?
-  disabledReason             String?
-  connectRefreshTokenHash    String?                     @unique
+  id                           String                       @id @default(uuid()) @db.Uuid
+  chefId                       String                       @unique @db.Uuid
+  stripeAccountId              String                       @unique
+  countryCode                  String
+  status                       StripeConnectedAccountStatus @default(pending)
+  transferCapabilityStatus     String?
+  payoutsEnabled               Boolean                      @default(false)
+  detailsSubmitted             Boolean                      @default(false)
+  requirements                 Json?
+  disabledReason               String?
+  connectRefreshTokenHash      String?                      @unique
   connectRefreshTokenExpiresAt DateTime?
-  connectRefreshTokenUsedAt  DateTime?
-  onboardingCompletedAt      DateTime?
-  lastSyncedAt               DateTime?
-  createdAt                  DateTime                    @default(now())
-  updatedAt                  DateTime                    @updatedAt
+  connectRefreshTokenUsedAt    DateTime?
+  onboardingCompletedAt        DateTime?
+  lastSyncedAt                 DateTime?
+  createdAt                    DateTime                     @default(now())
+  updatedAt                    DateTime                     @updatedAt
 
   chef ChefProfile @relation(fields: [chefId], references: [id], onDelete: Cascade)
 
@@ -765,50 +768,50 @@ model StripeConnectedAccount {
 }
 
 model PaymentConfiguration {
-  id                          String   @id @default("default")
-  chefCommissionBps           Int      @default(1500)
-  customerMarketplaceFeeBps   Int      @default(0)
-  updatedAt                   DateTime @updatedAt
+  id                        String   @id @default("default")
+  chefCommissionBps         Int      @default(1500)
+  customerMarketplaceFeeBps Int      @default(0)
+  updatedAt                 DateTime @updatedAt
 
   @@map("payment_configurations")
 }
 
 model PaymentWebhookEvent {
-  id            String    @id @default(uuid()) @db.Uuid
-  stripeEventId String    @unique
+  id            String   @id @default(uuid()) @db.Uuid
+  stripeEventId String   @unique
   eventType     String
   livemode      Boolean
-  processedAt   DateTime  @default(now())
-  createdAt     DateTime  @default(now())
+  processedAt   DateTime @default(now())
+  createdAt     DateTime @default(now())
 
   @@index([eventType, createdAt])
   @@map("payment_webhook_events")
 }
 
 model Review {
-  id                       String                 @id @default(uuid()) @db.Uuid
-  bookingId                String                 @unique @db.Uuid
-  customerId               String                 @db.Uuid
-  chefId                   String                 @db.Uuid
-  rating                   Int
-  reviewText               String?
-  recommended              Boolean
-  foodQuality              Int?
-  communication            Int?
-  punctuality              Int?
-  professionalism          Int?
-  moderationStatus         ReviewModerationStatus @default(published)
-  moderationReason         String?
-  createdAt                DateTime               @default(now())
-  updatedAt                DateTime               @updatedAt
+  id               String                 @id @default(uuid()) @db.Uuid
+  bookingId        String                 @unique @db.Uuid
+  customerId       String                 @db.Uuid
+  chefId           String                 @db.Uuid
+  rating           Int
+  reviewText       String?
+  recommended      Boolean
+  foodQuality      Int?
+  communication    Int?
+  punctuality      Int?
+  professionalism  Int?
+  moderationStatus ReviewModerationStatus @default(published)
+  moderationReason String?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
 
-  booking   BookingRequest       @relation(fields: [bookingId], references: [id], onDelete: Restrict)
-  customer  User                 @relation("CustomerReviews", fields: [customerId], references: [id], onDelete: Restrict)
-  chef      ChefProfile          @relation(fields: [chefId], references: [id], onDelete: Restrict)
-  photos    ReviewPhoto[]
-  reports   ReviewReport[]
-  response  ChefReviewResponse?
-  dispute   ReviewDispute?
+  booking  BookingRequest      @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  customer User                @relation("CustomerReviews", fields: [customerId], references: [id], onDelete: Restrict)
+  chef     ChefProfile         @relation(fields: [chefId], references: [id], onDelete: Restrict)
+  photos   ReviewPhoto[]
+  reports  ReviewReport[]
+  response ChefReviewResponse?
+  dispute  ReviewDispute?
 
   @@index([chefId, moderationStatus, createdAt])
   @@index([chefId, moderationStatus, rating])
@@ -828,13 +831,13 @@ model ReviewPhoto {
 }
 
 model ReviewReport {
-  id         String            @id @default(uuid()) @db.Uuid
-  reviewId   String            @db.Uuid
-  reporterId String            @db.Uuid
+  id         String             @id @default(uuid()) @db.Uuid
+  reviewId   String             @db.Uuid
+  reporterId String             @db.Uuid
   reason     String
   details    String?
   status     ReviewReportStatus @default(pending)
-  createdAt  DateTime          @default(now())
+  createdAt  DateTime           @default(now())
   reviewedAt DateTime?
 
   review   Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
@@ -860,19 +863,91 @@ model ChefReviewResponse {
 }
 
 model ReviewDispute {
-  id          String              @id @default(uuid()) @db.Uuid
-  reviewId    String              @unique @db.Uuid
-  chefId      String              @db.Uuid
-  appeal      String
-  status      ReviewDisputeStatus @default(pending)
-  adminNotes  String?
-  reviewedAt  DateTime?
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
+  id         String              @id @default(uuid()) @db.Uuid
+  reviewId   String              @unique @db.Uuid
+  chefId     String              @db.Uuid
+  appeal     String
+  status     ReviewDisputeStatus @default(pending)
+  adminNotes String?
+  reviewedAt DateTime?
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
 
   review Review      @relation(fields: [reviewId], references: [id], onDelete: Cascade)
   chef   ChefProfile @relation(fields: [chefId], references: [id], onDelete: Cascade)
 
   @@index([status, createdAt])
   @@map("review_disputes")
+}
+
+model FarmerProfile {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @unique @db.Uuid
+  farmName        String
+  bio             String?
+  city            String?
+  state           String?
+  countryCode     String?
+  offersPickup    Boolean  @default(true)
+  offersDelivery  Boolean  @default(false)
+  profileImageUrl String?
+  isPublic        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  produce   FarmProduce[]
+  inquiries FarmInquiry[]
+
+  @@index([state, city])
+  @@map("farmer_profiles")
+}
+
+model FarmProduce {
+  id          String   @id @default(uuid()) @db.Uuid
+  farmerId    String   @db.Uuid
+  name        String
+  category    String   @default("vegetable")
+  description String?
+  price       Decimal? @db.Decimal(10, 2)
+  unit        String?
+  isAvailable Boolean  @default(true)
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  farmer FarmerProfile @relation(fields: [farmerId], references: [id], onDelete: Cascade)
+
+  @@index([farmerId, isAvailable])
+  @@index([name])
+  @@map("farm_produce")
+}
+
+enum FarmInquiryStatus {
+  requested
+  quoted
+  declined
+  closed
+}
+
+model FarmInquiry {
+  id          String            @id @default(uuid()) @db.Uuid
+  customerId  String            @db.Uuid
+  farmerId    String            @db.Uuid
+  produceName String?
+  quantity    String?
+  message     String
+  status      FarmInquiryStatus @default(requested)
+  quoteAmount Decimal?          @db.Decimal(10, 2)
+  quoteNotes  String?
+  quotedAt    DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  customer User          @relation("CustomerFarmInquiries", fields: [customerId], references: [id], onDelete: Cascade)
+  farmer   FarmerProfile @relation(fields: [farmerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, createdAt])
+  @@index([farmerId, status])
+  @@map("farm_inquiries")
 }
