@@ -17,6 +17,7 @@ export type Farmer = {
   state: string | null;
   offersPickup: boolean;
   offersDelivery: boolean;
+  profileImageUrl?: string | null;
   produce: Produce[];
 };
 

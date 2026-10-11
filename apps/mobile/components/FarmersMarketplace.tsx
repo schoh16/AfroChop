@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { AuthInput, PrimaryButton } from './AuthUi';
 import { LocationDropdowns } from './LocationDropdowns';
 import {
@@ -126,6 +126,7 @@ export function FarmersMarketplace({ token, apiBaseUrl, countries, onBack }: Pro
           {!loading && farmers.length === 0 ? <Text style={s.sub}>No farmers found yet.</Text> : null}
           {farmers.map((farmer) => (
             <Pressable key={farmer.id} accessibilityRole="button" onPress={() => setSelected(farmer)} style={s.card}>
+              {farmer.profileImageUrl ? <Image source={{ uri: farmer.profileImageUrl }} style={s.avatar} /> : null}
               <Text style={s.cardTitle}>🧑🏾‍🌾 {farmer.farmName}</Text>
               <Text style={s.muted}>{farmer.city}{farmer.state ? `, ${farmer.state}` : ''}</Text>
               <View style={s.chips}>
@@ -241,6 +242,7 @@ function FarmerDetail({
       <Pressable accessibilityRole="button" onPress={onBack} style={s.back}>
         <Text style={s.link}>‹ All farmers</Text>
       </Pressable>
+      {farmer.profileImageUrl ? <Image source={{ uri: farmer.profileImageUrl }} style={s.avatarLarge} /> : null}
       <Text style={s.title}>🧑🏾‍🌾 {farmer.farmName}</Text>
       <Text style={s.muted}>
         {farmer.city}{farmer.state ? `, ${farmer.state}` : ''} ·{' '}
@@ -299,6 +301,8 @@ function FarmerDetail({
 
 const s = StyleSheet.create({
   content: { padding: 20, gap: 12, paddingBottom: 48 },
+  avatar: { width: 56, height: 56, borderRadius: 28 },
+  avatarLarge: { width: 96, height: 96, borderRadius: 48 },
   back: { paddingVertical: 4 },
   link: { color: c.forest, fontWeight: '700' },
   title: { color: c.brown, fontSize: 26, fontWeight: '800' },

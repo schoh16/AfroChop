@@ -233,6 +233,10 @@ async function seedSampleChef() {
   }
 }
 
+function avatarUrl(name: string) {
+  return `https://api.dicebear.com/9.x/avataaars/png?seed=${encodeURIComponent(name)}&size=256&backgroundColor=f8eedd`;
+}
+
 async function seedMarylandDemoChefs() {
   const passwordHash = await bcrypt.hash('Password123!', 10);
 
@@ -260,6 +264,7 @@ async function seedMarylandDemoChefs() {
         state: 'MD',
         countryCode: 'US',
         specialties: [demoChef.cuisine],
+        profileImageUrl: avatarUrl(demoChef.name),
         languages: ['English'],
         serviceTypes: ['prepared_meals'],
         verificationStatus: 'approved',
@@ -273,6 +278,7 @@ async function seedMarylandDemoChefs() {
         state: 'MD',
         countryCode: 'US',
         specialties: [demoChef.cuisine],
+        profileImageUrl: avatarUrl(demoChef.name),
         serviceTypes: ['prepared_meals'],
         verificationStatus: 'approved',
         isPublic: true,
@@ -448,7 +454,6 @@ async function seedDemoFarmers() {
     });
     const farmer = await prisma.farmerProfile.upsert({
       where: { userId: user.id },
-      update: {},
       create: {
         userId: user.id,
         farmName: demo.name,
@@ -458,7 +463,9 @@ async function seedDemoFarmers() {
         countryCode: 'US',
         offersPickup: true,
         offersDelivery: true,
+        profileImageUrl: avatarUrl(demo.name),
       },
+      update: { profileImageUrl: avatarUrl(demo.name) },
       select: { id: true },
     });
     if ((await prisma.farmProduce.count({ where: { farmerId: farmer.id } })) === 0) {
