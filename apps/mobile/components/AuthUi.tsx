@@ -225,6 +225,7 @@ export function AuthScreenLayout({
       <ScrollView
         contentContainerStyle={styles.layoutContent}
         keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets
         showsVerticalScrollIndicator={false}
       >
         {onBack ? (

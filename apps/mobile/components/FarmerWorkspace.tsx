@@ -87,7 +87,7 @@ export function FarmerAuth({
   }
 
   return (
-    <ScrollView contentContainerStyle={s.content}>
+    <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets keyboardDismissMode="on-drag">
       <Pressable accessibilityRole="button" onPress={onBack} style={s.back}>
         <Text style={s.link}>‹ Back</Text>
       </Pressable>
@@ -200,7 +200,7 @@ export function FarmerWorkspace({
   }
 
   return (
-    <ScrollView contentContainerStyle={s.content}>
+    <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets keyboardDismissMode="on-drag">
       <AfroChopLogo />
       <Text style={s.title}>🧑🏾‍🌾 {profile?.farmName ?? 'My farm'}</Text>
       <Text style={s.muted}>{profile ? `${profile.city}${profile.state ? `, ${profile.state}` : ''}` : ''}</Text>

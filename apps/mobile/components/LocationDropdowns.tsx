@@ -274,8 +274,8 @@ const styles = StyleSheet.create({
   },
   option: { borderBottomColor: '#F1ECE6', borderBottomWidth: StyleSheet.hairlineWidth, minHeight: 42, justifyContent: 'center', paddingHorizontal: 14 },
   optionText: { color: colors.brown, fontSize: 14 },
-  closeMenu: { alignSelf: 'flex-end', paddingHorizontal: 6, paddingVertical: 6 },
-  closeText: { color: colors.forest, fontSize: 11, fontWeight: '700' },
+  closeMenu: { alignSelf: 'flex-end', paddingHorizontal: 12, paddingVertical: 10 },
+  closeText: { color: colors.forest, fontSize: 13, fontWeight: '700' },
   helper: { color: colors.muted, fontSize: 11, lineHeight: 17, marginBottom: 12 },
   error: { color: '#A43F2B', fontSize: 12, marginBottom: 10 },
 });

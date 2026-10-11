@@ -345,7 +345,7 @@ export function ChefWorkspace({
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets keyboardDismissMode="on-drag">
       <View style={styles.header}>
         <View style={styles.headerCopy}>
           <Text style={styles.eyebrow}>CHEF WORKSPACE</Text>

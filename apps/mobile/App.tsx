@@ -810,7 +810,7 @@ export default function App() {
           <Text style={styles.signupIntro}>Checking your secure sign-in…</Text>
         </View>
       ) : guideRole ? (
-        <ScrollView contentContainerStyle={styles.content}>
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets keyboardDismissMode="on-drag">
           <View style={styles.guideScreen}>
             <View style={styles.brandRow}>
               <Text style={styles.brandMark}>🍲</Text>
@@ -1090,7 +1090,7 @@ export default function App() {
           }}
         />
       ) : (
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets keyboardDismissMode="on-drag">
         {showCustomerAuth ? (
           <View style={styles.signupScreen}>
             <Pressable
@@ -1636,6 +1636,9 @@ export default function App() {
         ) : chefs.length === 0 ? (
           <View style={styles.stateCard}>
             <Text style={styles.stateText}>No approved cooks match this search yet. Try another area or cuisine.</Text>
+            <Pressable accessibilityRole="button" onPress={resetCustomerHome} style={[styles.primaryButton, styles.retryButton]}>
+              <Text style={styles.primaryButtonText}>Clear search and start over</Text>
+            </Pressable>
           </View>
         ) : selectedChef ? (
           <View style={styles.profileCard}>
@@ -2006,7 +2009,7 @@ export default function App() {
                 <View style={styles.ratingRow}>
                   <Text style={styles.star}>★</Text>
                   <Text style={styles.rating}>
-                    {chef.averageRating?.toFixed(1) ?? 'New'} · {chef.reviewCount} reviews
+                    {chef.reviewCount > 0 && chef.averageRating ? ` · ${chef.reviewCount} review${chef.reviewCount === 1 ? '' : 's'}` : 'New · no reviews yet'}
                   </Text>
                 </View>
                 {chef.foodPhotos.length > 0 ? (

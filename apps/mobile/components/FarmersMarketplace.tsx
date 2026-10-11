@@ -74,7 +74,7 @@ export function FarmersMarketplace({ token, apiBaseUrl, countries, onBack }: Pro
   }
 
   return (
-    <ScrollView contentContainerStyle={s.content}>
+    <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets keyboardDismissMode="on-drag">
       <Pressable accessibilityRole="button" onPress={onBack} style={s.back}>
         <Text style={s.link}>‹ Back to cooks</Text>
       </Pressable>
@@ -237,7 +237,7 @@ function FarmerDetail({
   }
 
   return (
-    <ScrollView contentContainerStyle={s.content}>
+    <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets keyboardDismissMode="on-drag">
       <Pressable accessibilityRole="button" onPress={onBack} style={s.back}>
         <Text style={s.link}>‹ All farmers</Text>
       </Pressable>
