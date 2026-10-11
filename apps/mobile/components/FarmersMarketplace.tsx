@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { AuthInput, PrimaryButton } from './AuthUi';
+import { LocationDropdowns } from './LocationDropdowns';
 import {
   ChatMessage,
   FarmInquiry,
@@ -10,23 +11,35 @@ import {
   formatPrice,
 } from '../lib/farmApi';
 
-type Props = { token: string; apiBaseUrl: string; onBack: () => void };
+type Props = {
+  token: string;
+  apiBaseUrl: string;
+  countries: { code?: string; name: string }[];
+  onBack: () => void;
+};
 
-export function FarmersMarketplace({ token, apiBaseUrl, onBack }: Props) {
+export function FarmersMarketplace({ token, apiBaseUrl, countries, onBack }: Props) {
   const api = useMemo(() => createFarmApi(apiBaseUrl, token), [apiBaseUrl, token]);
   const [farmers, setFarmers] = useState<Farmer[]>([]);
   const [inquiries, setInquiries] = useState<FarmInquiry[]>([]);
   const [search, setSearch] = useState('');
+  const [countryCode, setCountryCode] = useState('US');
+  const [state, setState] = useState('');
+  const [city, setCity] = useState('');
   const [selected, setSelected] = useState<Farmer | null>(null);
   const [tab, setTab] = useState<'browse' | 'requests'>('browse');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadFarmers = useCallback(async (q: string) => {
+  const loadFarmers = useCallback(async (q: string, cityFilter = '', stateFilter = '') => {
     setLoading(true);
     setError(null);
     try {
-      const params = q.trim() ? `?q=${encodeURIComponent(q.trim())}` : '';
+      const query = new URLSearchParams();
+      if (q.trim()) query.set('q', q.trim());
+      if (cityFilter.trim()) query.set('city', cityFilter.trim());
+      if (stateFilter.trim()) query.set('state', stateFilter.trim());
+      const params = query.toString() ? `?${query.toString()}` : '';
       const result = await api<{ items: Farmer[] }>(`/farmers${params}`);
       setFarmers(result.items);
     } catch (e) {
@@ -79,18 +92,33 @@ export function FarmersMarketplace({ token, apiBaseUrl, onBack }: Props) {
       {error ? <Text style={s.error}>{error}</Text> : null}
       {tab === 'browse' ? (
         <>
+          <LocationDropdowns
+            countries={countries}
+            apiBaseUrl={apiBaseUrl}
+            countryCode={countryCode}
+            countryName={countries.find(({ code }) => code === countryCode)?.name ?? ''}
+            state={state}
+            city={city}
+            onCountryChange={(code) => {
+              setCountryCode(code);
+              setState('');
+              setCity('');
+            }}
+            onStateChange={setState}
+            onCityChange={setCity}
+          />
           <View style={s.searchRow}>
             <TextInput
               accessibilityLabel="Search farmers or produce"
               onChangeText={setSearch}
-              onSubmitEditing={() => void loadFarmers(search)}
+              onSubmitEditing={() => void loadFarmers(search, city, state)}
               placeholder="Search okra, corn, farm or city"
               placeholderTextColor="#8B8175"
               returnKeyType="search"
               style={s.searchInput}
               value={search}
             />
-            <Pressable accessibilityRole="button" onPress={() => void loadFarmers(search)} style={s.searchBtn}>
+            <Pressable accessibilityRole="button" onPress={() => void loadFarmers(search, city, state)} style={s.searchBtn}>
               <Text style={s.searchBtnText}>Search</Text>
             </Pressable>
           </View>

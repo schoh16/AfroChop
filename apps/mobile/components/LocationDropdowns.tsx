@@ -8,6 +8,12 @@ import {
   View,
 } from 'react-native';
 
+const usStates = ['AL','AK','AZ','AR','CA','CO','CT','DE','DC','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY'];
+
+function mergeOptions(base: string[], extra: string[]) {
+  return [...new Set([...extra, ...base])].sort((a, b) => a.localeCompare(b));
+}
+
 type CountryOption = { code?: string; name: string };
 
 const colors = {
@@ -36,34 +42,41 @@ function DropdownField({
   onSelect: (value: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const filteredOptions = options.filter((option) =>
-    option.toLowerCase().includes(value.trim().toLowerCase()),
-  );
+  const [typed, setTyped] = useState(false);
+  const query = typed ? value.trim().toLowerCase() : '';
+  const filteredOptions = options.filter((option) => option.toLowerCase().includes(query));
 
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
+      <View>
       <TextInput
         accessibilityLabel={label}
         accessibilityHint="Type to search or choose a suggested location"
         editable={!disabled}
         onChangeText={(text) => {
           onChangeText(text);
+          setTyped(true);
           setExpanded(true);
         }}
-        onFocus={() => setExpanded(true)}
+        onFocus={() => {
+          setTyped(false);
+          setExpanded(true);
+        }}
         placeholder={placeholder}
         placeholderTextColor="#8B8175"
         value={value}
         style={[styles.input, disabled && styles.inputDisabled]}
       />
+      <Text pointerEvents="none" style={styles.caret}>▾</Text>
+      </View>
       {expanded && !disabled && filteredOptions.length > 0 ? (
         <ScrollView
           keyboardShouldPersistTaps="handled"
           nestedScrollEnabled
           style={styles.optionList}
         >
-          {filteredOptions.slice(0, 10).map((option) => (
+          {filteredOptions.map((option) => (
             <Pressable
               key={option}
               accessibilityRole="button"
@@ -80,7 +93,7 @@ function DropdownField({
       ) : null}
       {expanded ? (
         <Pressable accessibilityRole="button" onPress={() => setExpanded(false)} style={styles.closeMenu}>
-          <Text style={styles.closeText}>Close suggestions</Text>
+          <Text style={styles.closeText}>Close</Text>
         </Pressable>
       ) : null}
     </View>
@@ -200,7 +213,10 @@ export function LocationDropdowns({
         label="State / region"
         placeholder="Choose or enter a state"
         value={state}
-        options={stateSuggestions?.countryCode === countryCode ? stateSuggestions.options : []}
+        options={mergeOptions(
+          stateSuggestions?.countryCode === countryCode ? stateSuggestions.options : [],
+          countryCode === 'US' ? usStates : [],
+        )}
         disabled={!countryCode}
         onChangeText={(value) => {
           onStateChange(value);
@@ -225,7 +241,7 @@ export function LocationDropdowns({
         onSelect={onCityChange}
       />
       <Text style={styles.helper}>
-        Suggestions show locations where approved cooks currently offer service. You can type another location.
+        Pick from the lists, or type to search. Cities listed are where cooks and farmers are currently active; you can type another.
       </Text>
       {visibleError ? <Text accessibilityRole="alert" style={styles.error}>{visibleError}</Text> : null}
     </View>
@@ -244,14 +260,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
     minHeight: 50,
     paddingHorizontal: 14,
+    paddingRight: 34,
   },
+  caret: { color: colors.muted, fontSize: 14, position: 'absolute', right: 14, top: 17 },
   inputDisabled: { backgroundColor: '#F2EEE7', opacity: 0.75 },
   optionList: {
     backgroundColor: '#fff',
     borderColor: colors.border,
     borderRadius: 12,
     borderWidth: 1,
-    maxHeight: 180,
+    maxHeight: 220,
     marginTop: 3,
   },
   option: { borderBottomColor: '#F1ECE6', borderBottomWidth: StyleSheet.hairlineWidth, minHeight: 42, justifyContent: 'center', paddingHorizontal: 14 },

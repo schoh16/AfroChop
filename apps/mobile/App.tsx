@@ -33,6 +33,7 @@ import { ChefWorkspace } from './components/ChefWorkspace';
 import { FarmerAuth, FarmerWorkspace } from './components/FarmerWorkspace';
 import { FarmersMarketplace } from './components/FarmersMarketplace';
 import { authTokenStorage } from './lib/authTokenStorage';
+import { CalendarPicker, parseDateKey } from './components/CalendarPicker';
 import { LocationDropdowns } from './components/LocationDropdowns';
 import { FoodMediaItem } from './components/FoodMediaItem';
 import { marketingContactRequiresOptIn } from './lib/marketingRegions';
@@ -143,11 +144,6 @@ function sortCuisineCountries(items: Country[]) {
   });
 }
 
-function formatLocalDateTime(date: Date) {
-  const pad = (value: number) => String(value).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
 function isValidPhone(value: string) {
   return /^\+[1-9]\d{7,14}$/.test(value.replace(/[\s()-]/g, ''));
 }
@@ -173,6 +169,7 @@ export default function App() {
   const [searchText, setSearchText] = useState('');
   const [city, setCity] = useState('');
   const [stateRegion, setStateRegion] = useState('');
+  const [homeCountryCode, setHomeCountryCode] = useState('US');
   const [selectedCountryId, setSelectedCountryId] = useState<string>();
   const [selectedChef, setSelectedChef] = useState<ChefSummary | null>(null);
   const [chefReviews, setChefReviews] = useState<ChefReviewList | null>(null);
@@ -182,9 +179,7 @@ export default function App() {
   const [allergySelections, setAllergySelections] = useState<string[]>([]);
   const [dietaryNotes, setDietaryNotes] = useState('');
   const [bookingNotice, setBookingNotice] = useState<string | null>(null);
-  const [quoteDateTime, setQuoteDateTime] = useState(() =>
-    formatLocalDateTime(new Date(Date.now() + 48 * 60 * 60 * 1000)),
-  );
+  const [quoteDate, setQuoteDate] = useState('');
   const [quoteDuration, setQuoteDuration] = useState('120');
   const [quoteServiceType, setQuoteServiceType] = useState('prepared_meals');
   const [quoteJurisdiction, setQuoteJurisdiction] = useState('MD');
@@ -679,10 +674,14 @@ export default function App() {
       setBookingNotice('Please review and acknowledge the food allergy notice before sending your request.');
       return;
     }
-    const requestedDate = new Date(quoteDateTime);
+    if (!quoteDate) {
+      setBookingNotice('Please choose the date of service from the calendar.');
+      return;
+    }
+    const requestedDate = parseDateKey(quoteDate);
     const durationMinutes = Number(quoteDuration);
     if (!Number.isFinite(requestedDate.getTime()) || requestedDate <= new Date()) {
-      setBookingNotice('Choose a valid service date and time in the future.');
+      setBookingNotice('Choose a service date in the future.');
       return;
     }
     if (!Number.isInteger(durationMinutes) || durationMinutes < 30 || durationMinutes > 720) {
@@ -1060,6 +1059,7 @@ export default function App() {
       ) : showFarmerAuth ? (
         <FarmerAuth
           apiBaseUrl={apiBaseUrl}
+          countries={marketCountries}
           isSignIn={authIntent === 'signin'}
           onBack={() => setShowFarmerAuth(false)}
           onAuthenticated={(token, name) => {
@@ -1072,6 +1072,7 @@ export default function App() {
         <FarmersMarketplace
           token={customerSessionToken}
           apiBaseUrl={apiBaseUrl}
+          countries={marketCountries}
           onBack={() => setShowFarmers(false)}
         />
       ) : chefSessionToken ? (
@@ -1390,38 +1391,24 @@ export default function App() {
                 );
               })}
             </View>
-            <View style={styles.formRow}>
-              <TextInput
-                accessibilityLabel="City where you offer cooking"
-                placeholder="City"
-                placeholderTextColor={colors.muted}
-                value={chefCity}
-                onChangeText={setChefCity}
-                style={[styles.formInput, styles.formInputHalf]}
-              />
-              <TextInput
-                accessibilityLabel="State or region where you offer cooking"
-                placeholder="State / region"
-                placeholderTextColor={colors.muted}
-                value={chefState}
-                onChangeText={setChefState}
-                style={[styles.formInput, styles.formInputHalf]}
-              />
-            </View>
-            <AuthInput
-              label="Country code"
-              placeholder="US, CA, or European country code"
-              value={chefCountryCode}
-              onChangeText={(value) => {
-                const normalized = value.trim().toUpperCase();
-                setChefCountryCode(normalized);
-                if (normalized.length === 2) {
-                  setChefMarketingSharing(!marketingContactRequiresOptIn(normalized));
+            <LocationDropdowns
+              countries={marketCountries}
+              apiBaseUrl={apiBaseUrl}
+              countryCode={chefCountryCode}
+              countryName={marketCountries.find(({ code }) => code === chefCountryCode)?.name ?? ''}
+              state={chefState}
+              city={chefCity}
+              onCountryChange={(code, name) => {
+                setChefCountryCode(code);
+                setChefState('');
+                setChefCity('');
+                if (code.length === 2) {
+                  setChefMarketingSharing(!marketingContactRequiresOptIn(code));
                   setChefMarketingSharingTouched(false);
                 }
               }}
-              autoCapitalize="characters"
-              maxLength={2}
+              onStateChange={setChefState}
+              onCityChange={setChefCity}
             />
             <Pressable
               accessibilityRole="checkbox"
@@ -1536,36 +1523,29 @@ export default function App() {
 
         <View style={styles.locationBlock}>
           <Text style={styles.locationLabel}>FIND COOKS NEAR</Text>
-          <View style={styles.locationRow}>
-            <TextInput
-              accessibilityLabel="City or neighborhood"
-              value={city}
-              onChangeText={setCity}
-              onSubmitEditing={() => void loadChefs()}
-              placeholder="Enter your city"
-              placeholderTextColor={colors.muted}
-              returnKeyType="search"
-              style={styles.locationInput}
-            />
-            <TextInput
-              accessibilityLabel="State or region"
-              value={stateRegion}
-              onChangeText={setStateRegion}
-              onSubmitEditing={() => void loadChefs()}
-              placeholder="State"
-              placeholderTextColor={colors.muted}
-              returnKeyType="search"
-              style={styles.regionInput}
-            />
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Find cooks in this location"
-              onPress={() => void loadChefs()}
-              style={styles.locationButton}
-            >
-              <Text style={styles.locationButtonText}>Go</Text>
-            </Pressable>
-          </View>
+          <LocationDropdowns
+            countries={marketCountries}
+            apiBaseUrl={apiBaseUrl}
+            countryCode={homeCountryCode}
+            countryName={marketCountries.find(({ code }) => code === homeCountryCode)?.name ?? ''}
+            state={stateRegion}
+            city={city}
+            onCountryChange={(code) => {
+              setHomeCountryCode(code);
+              setStateRegion('');
+              setCity('');
+            }}
+            onStateChange={setStateRegion}
+            onCityChange={setCity}
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Find cooks in this location"
+            onPress={() => void loadChefs()}
+            style={styles.locationButton}
+          >
+            <Text style={styles.locationButtonText}>Find cooks</Text>
+          </Pressable>
         </View>
 
         <View style={styles.searchBar}>
@@ -1829,7 +1809,7 @@ export default function App() {
                     ? selectedChef.state.trim().toUpperCase()
                     : 'MD',
                 );
-                setQuoteDateTime(formatLocalDateTime(new Date(Date.now() + 48 * 60 * 60 * 1000)));
+                setQuoteDate('');
               }}
             >
               <Text style={styles.primaryButtonText}>Discuss an order & get a quote</Text>
@@ -1858,7 +1838,7 @@ export default function App() {
                   <>
                     <Text style={styles.cardTitle}>Request a quote</Text>
                     <Text style={styles.cardText}>
-                      Choose a service and time, then share any allergies or dietary needs with the cook as part of your request.
+                      Choose a service and the date of service, then share any allergies or dietary needs with the cook as part of your request.
                     </Text>
                     <Text style={styles.countryPickerLabel}>Service type</Text>
                     <View style={styles.allergenChoices}>
@@ -1879,16 +1859,15 @@ export default function App() {
                         );
                       })}
                     </View>
-                    <TextInput
-                      accessibilityLabel="Requested service date and time"
-                      placeholder="Date and time (YYYY-MM-DDTHH:mm)"
-                      placeholderTextColor="#756C61"
-                      value={quoteDateTime}
-                      onChangeText={setQuoteDateTime}
-                      autoCapitalize="none"
-                      style={styles.dietaryInput}
+                    <Text style={styles.countryPickerLabel}>Date of service *</Text>
+                    <CalendarPicker
+                      value={quoteDate}
+                      onChange={setQuoteDate}
+                      minDate={new Date(Date.now() + 24 * 60 * 60 * 1000)}
                     />
-                    <Text style={styles.formFootnote}>Enter the requested time in your local time zone.</Text>
+                    <Text style={styles.formFootnote}>
+                      {quoteDate ? `Selected: ${parseDateKey(quoteDate).toDateString()}` : 'Please choose the date you need the service.'}
+                    </Text>
                     <View style={styles.formRow}>
                       <TextInput
                         accessibilityLabel="Service duration in minutes"
@@ -2472,8 +2451,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.forest,
     borderRadius: 11,
     paddingHorizontal: 14,
-    paddingVertical: 9,
-    marginLeft: 6,
+    paddingVertical: 11,
+    alignItems: 'center',
   },
   locationButtonText: {
     color: '#fff',

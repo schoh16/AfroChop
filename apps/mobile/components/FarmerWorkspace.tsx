@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { LocationDropdowns } from './LocationDropdowns';
 import { AfroChopLogo, AuthInput, PasswordInput, PrimaryButton } from './AuthUi';
 import {
   ChatMessage,
@@ -22,11 +23,13 @@ type FarmerProfile = {
 
 export function FarmerAuth({
   apiBaseUrl,
+  countries,
   isSignIn,
   onBack,
   onAuthenticated,
 }: {
   apiBaseUrl: string;
+  countries: { code?: string; name: string }[];
   isSignIn: boolean;
   onBack: () => void;
   onAuthenticated: (token: string, name: string) => void;
@@ -37,6 +40,7 @@ export function FarmerAuth({
   const [farmName, setFarmName] = useState('');
   const [city, setCity] = useState('');
   const [state, setState] = useState('');
+  const [countryCode, setCountryCode] = useState('US');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -69,7 +73,7 @@ export function FarmerAuth({
             farmName: farmName.trim(),
             city: city.trim(),
             state: state.trim() || undefined,
-            countryCode: 'US',
+            countryCode: countryCode || 'US',
             offersPickup: true,
           }),
         });
@@ -93,8 +97,21 @@ export function FarmerAuth({
         <>
           <AuthInput label="Your name" onChangeText={setName} value={name} />
           <AuthInput label="Farm name" onChangeText={setFarmName} value={farmName} />
-          <AuthInput label="City" onChangeText={setCity} value={city} />
-          <AuthInput label="State (optional)" autoCapitalize="characters" onChangeText={setState} value={state} />
+          <LocationDropdowns
+            countries={countries}
+            apiBaseUrl={apiBaseUrl}
+            countryCode={countryCode}
+            countryName={countries.find(({ code }) => code === countryCode)?.name ?? ''}
+            state={state}
+            city={city}
+            onCountryChange={(code) => {
+              setCountryCode(code);
+              setState('');
+              setCity('');
+            }}
+            onStateChange={setState}
+            onCityChange={setCity}
+          />
         </>
       ) : null}
       <AuthInput label="Email" autoCapitalize="none" keyboardType="email-address" onChangeText={setEmail} value={email} />
