@@ -4,6 +4,7 @@ import {
   Get,
   Headers,
   Header,
+  Param,
   Patch,
   Post,
   Query,
@@ -30,6 +31,20 @@ export class PaymentsController {
   @Get('configuration')
   getCustomerPaymentConfiguration() {
     return this.paymentsService.getCustomerPaymentConfiguration();
+  }
+
+  @Post('quotes/:id/checkout')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.customer)
+  createDepositCheckout(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
+    return this.paymentsService.createDepositCheckout(request.user.sub, id);
+  }
+
+  @Post('quotes/:id/confirm')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.customer)
+  confirmDeposit(@Req() request: AuthenticatedRequest, @Param('id') id: string) {
+    return this.paymentsService.confirmDeposit(request.user.sub, id);
   }
 
   @Get('chef/connect/status')

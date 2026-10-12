@@ -443,6 +443,9 @@ model BookingRequest {
   downPaymentPercent       Int                 @default(50)
   finalPaymentDueAt        DateTime?
   quoteAmount              Decimal?            @db.Decimal(10, 2)
+  stripeCheckoutSessionId  String?             @unique
+  depositAmount            Decimal?            @db.Decimal(10, 2)
+  depositPaidAt            DateTime?
   createdAt                DateTime            @default(now())
   updatedAt                DateTime            @updatedAt
 

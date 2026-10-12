@@ -282,6 +282,14 @@ export class PaymentsService {
       throw new UnauthorizedException('Stripe webhook signature verification failed.');
     }
 
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object as Stripe.Checkout.Session;
+      if (session.payment_status === 'paid' && session.client_reference_id) {
+        await this.markDepositPaid(session.client_reference_id);
+      }
+      return { received: true };
+    }
+
     if (event.type !== 'account.updated') {
       return { received: true, ignored: true };
     }
@@ -326,6 +334,78 @@ export class PaymentsService {
     }
 
     return { received: true };
+  }
+
+  async createDepositCheckout(customerId: string, quoteId: string) {
+    const stripe = this.requireStripe();
+    const quote = await this.prisma.quote.findFirst({
+      where: { id: quoteId, bookingRequest: { customerId } },
+      include: { bookingRequest: true },
+    });
+    if (!quote) throw new NotFoundException('Quote not found.');
+    const booking = quote.bookingRequest;
+    if (quote.status !== 'accepted' || booking.status !== 'awaiting_payment') {
+      throw new ConflictException('Accept the quote before paying the deposit.');
+    }
+
+    const depositCents = Math.round(
+      Number(quote.amount) * 100 * (quote.downPaymentPercent / 100),
+    );
+    if (depositCents < 50) throw new BadRequestException('Deposit is too small to charge.');
+    const returnBase =
+      this.config.get<string>('CHECKOUT_RETURN_URL') ?? 'http://localhost:8081';
+    const configuration = await this.ensurePaymentConfiguration();
+    const feeCents = Math.round((depositCents * configuration.chefCommissionBps) / 10_000);
+
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      client_reference_id: booking.id,
+      line_items: [
+        {
+          quantity: 1,
+          price_data: {
+            currency: 'usd',
+            unit_amount: depositCents,
+            product_data: { name: `AfroChop deposit (${quote.downPaymentPercent}%)` },
+          },
+        },
+      ],
+      metadata: { bookingId: booking.id, quoteId: quote.id, platformFeeCents: String(feeCents) },
+      success_url: `${returnBase}/?payment=success`,
+      cancel_url: `${returnBase}/?payment=cancelled`,
+    });
+    if (!session.url) throw new ServiceUnavailableException('Stripe did not return a checkout URL.');
+
+    await this.prisma.bookingRequest.update({
+      where: { id: booking.id },
+      data: { stripeCheckoutSessionId: session.id, depositAmount: depositCents / 100 },
+    });
+    return { url: session.url, sessionId: session.id };
+  }
+
+  async confirmDeposit(customerId: string, quoteId: string) {
+    const quote = await this.prisma.quote.findFirst({
+      where: { id: quoteId, bookingRequest: { customerId } },
+      include: { bookingRequest: true },
+    });
+    if (!quote) throw new NotFoundException('Quote not found.');
+    const booking = quote.bookingRequest;
+    if (booking.depositPaidAt) return { paid: true, status: booking.status };
+    if (!booking.stripeCheckoutSessionId) return { paid: false, status: booking.status };
+
+    const session = await this.requireStripe().checkout.sessions.retrieve(
+      booking.stripeCheckoutSessionId,
+    );
+    if (session.payment_status !== 'paid') return { paid: false, status: booking.status };
+    return this.markDepositPaid(booking.id);
+  }
+
+  private async markDepositPaid(bookingId: string) {
+    await this.prisma.bookingRequest.updateMany({
+      where: { id: bookingId, status: 'awaiting_payment', depositPaidAt: null },
+      data: { status: 'confirmed', depositPaidAt: new Date() },
+    });
+    return { paid: true, status: 'confirmed' };
   }
 
   private async createAccountLink(

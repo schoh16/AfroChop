@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { MessagePartner } from './Messaging';
 
 type Quote = {
@@ -31,7 +31,7 @@ const statusLabels: Record<string, string> = {
   requested: 'Waiting for the cook’s quote',
   quoted: 'Quote received',
   awaiting_payment: 'Quote accepted · payment is the next step',
-  confirmed: 'Confirmed',
+  confirmed: 'Confirmed · deposit paid',
   in_progress: 'In progress',
   completed: 'Completed',
   cancelled: 'Cancelled',
@@ -64,7 +64,23 @@ export function CustomerRequests({ token, apiBaseUrl, onBack, onMessage }: Props
 
   const load = useCallback(async () => {
     try {
-      setRequests(await call<CustomerRequest[]>('/quotes/requests'));
+      const list = await call<CustomerRequest[]>('/quotes/requests');
+      const unpaid = list.filter((item) => item.status === 'awaiting_payment');
+      if (unpaid.length > 0) {
+        const results = await Promise.all(
+          unpaid.map((item) =>
+            call<{ paid: boolean }>(`/payments/quotes/${item.quotes[0]?.id}/confirm`, 'POST').catch(
+              () => ({ paid: false }),
+            ),
+          ),
+        );
+        if (results.some((result) => result.paid)) {
+          setRequests(await call<CustomerRequest[]>('/quotes/requests'));
+          setError(null);
+          return;
+        }
+      }
+      setRequests(list);
       setError(null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Could not load your requests.');
@@ -78,6 +94,18 @@ export function CustomerRequests({ token, apiBaseUrl, onBack, onMessage }: Props
     const timer = setInterval(() => void load(), 10000);
     return () => clearInterval(timer);
   }, [load]);
+
+  async function payDeposit(quoteId: string) {
+    setBusyId(quoteId);
+    try {
+      const { url } = await call<{ url: string }>(`/payments/quotes/${quoteId}/checkout`, 'POST');
+      await Linking.openURL(url);
+    } catch (payError) {
+      setError(payError instanceof Error ? payError.message : 'Could not start payment.');
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   async function respond(quoteId: string, action: 'accept' | 'decline') {
     setBusyId(quoteId);
@@ -146,6 +174,18 @@ export function CustomerRequests({ token, apiBaseUrl, onBack, onMessage }: Props
                             <Text style={styles.declineText}>Decline</Text>
                           </Pressable>
                         </View>
+                      ) : null}
+                      {quote.status === 'accepted' && request.status === 'awaiting_payment' ? (
+                        <Pressable
+                          accessibilityRole="button"
+                          disabled={busyId === quote.id}
+                          onPress={() => void payDeposit(quote.id)}
+                          style={styles.accept}
+                        >
+                          <Text style={styles.acceptText}>
+                            Pay ${((amount * quote.downPaymentPercent) / 100).toFixed(2)} deposit
+                          </Text>
+                        </Pressable>
                       ) : null}
                     </View>
                   ) : null}
