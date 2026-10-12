@@ -257,6 +257,18 @@ export function ChefWorkspace({
     void refresh();
   }, [token, apiBaseUrl]);
 
+  // Keep new customer requests fresh without touching in-progress profile edits.
+  useEffect(() => {
+    if (activePage !== 'quotes') return undefined;
+    const load = () =>
+      void request<ChefBookingRequest[]>('/quotes/requests')
+        .then(setQuoteRequests)
+        .catch(() => undefined);
+    load();
+    const timer = setInterval(load, 10000);
+    return () => clearInterval(timer);
+  }, [activePage, token, apiBaseUrl]);
+
   async function saveProfile() {
     const countryCode = profileCountryCode.trim().toUpperCase();
     const radiusKm = Number(profileServiceRadius);
@@ -951,13 +963,13 @@ export function ChefWorkspace({
           <ActivityIndicator color="#185A43" />
           <Text style={styles.helper}>Loading your quote requests…</Text>
         </View>
-      ) : quoteRequests.filter((booking) => booking.status === 'requested' || booking.status === 'quoted').length === 0 ? (
+      ) : quoteRequests.filter((booking) => ['requested', 'quoted', 'awaiting_payment'].includes(booking.status)).length === 0 ? (
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>No quote requests yet</Text>
           <Text style={styles.helper}>New customer requests will appear here. You can review the details and send your quote from this page.</Text>
         </View>
       ) : quoteRequests
-        .filter((booking) => booking.status === 'requested' || booking.status === 'quoted')
+        .filter((booking) => ['requested', 'quoted', 'awaiting_payment'].includes(booking.status))
         .map((booking) => {
           const latestQuote = booking.quotes[0];
           const quoteAmount = Number(quoteAmounts[booking.id] ?? '');
@@ -1044,7 +1056,11 @@ export function ChefWorkspace({
                 <>
                   <Text style={styles.quoteSummary}>
                     Quote sent: ${Number(latestQuote.amount).toFixed(2)}
-                    {latestQuote.status === 'pending' ? ' · Awaiting customer response' : ` · ${latestQuote.status}`}
+                    {latestQuote.status === 'pending'
+                      ? ' · Awaiting customer response'
+                      : latestQuote.status === 'accepted'
+                        ? ' · Accepted by customer — awaiting deposit'
+                        : ` · ${latestQuote.status}`}
                   </Text>
                   {latestQuote.notes ? <Text style={styles.helper}>Quote details: {latestQuote.notes}</Text> : null}
                 </>

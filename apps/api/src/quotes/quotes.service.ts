@@ -47,6 +47,7 @@ export class QuotesService {
             chef: {
               select: {
                 id: true,
+                userId: true,
                 displayName: true,
                 profileImageUrl: true,
                 averageRating: true,
@@ -321,6 +322,49 @@ export class QuotesService {
         where: { id: quote.bookingRequestId },
         data: { quoteAmount: dto.amount },
       });
+      return updated;
+    });
+  }
+
+  async respondToQuote(customerId: string, quoteId: string, accept: boolean) {
+    const quote = await this.prisma.quote.findUnique({
+      where: { id: quoteId },
+      select: {
+        id: true,
+        status: true,
+        bookingRequestId: true,
+        bookingRequest: { select: { customerId: true, status: true } },
+      },
+    });
+
+    if (!quote || quote.bookingRequest.customerId !== customerId) {
+      throw new NotFoundException('Quote not found.');
+    }
+    if (quote.status !== QuoteStatus.pending || quote.bookingRequest.status !== BookingStatus.quoted) {
+      throw new BadRequestException('This quote can no longer be answered.');
+    }
+
+    return this.prisma.$transaction(async (transaction) => {
+      const updated = await transaction.quote.update({
+        where: { id: quoteId },
+        data: accept
+          ? { status: QuoteStatus.accepted, acceptedAt: new Date() }
+          : { status: QuoteStatus.declined },
+      });
+      if (accept) {
+        await transaction.quote.updateMany({
+          where: {
+            bookingRequestId: quote.bookingRequestId,
+            id: { not: quoteId },
+            status: QuoteStatus.pending,
+          },
+          data: { status: QuoteStatus.declined },
+        });
+        await transaction.bookingRequest.update({
+          where: { id: quote.bookingRequestId },
+          data: { status: BookingStatus.awaiting_payment },
+        });
+      }
       return updated;
     });
   }

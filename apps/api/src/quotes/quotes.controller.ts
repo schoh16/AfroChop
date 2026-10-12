@@ -90,6 +90,26 @@ export class QuotesController {
     );
   }
 
+  @Post(':id/accept')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.customer)
+  acceptQuote(
+    @Req() request: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) quoteId: string,
+  ) {
+    return this.quotesService.respondToQuote(request.user.sub, quoteId, true);
+  }
+
+  @Post(':id/decline')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.customer)
+  declineQuote(
+    @Req() request: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) quoteId: string,
+  ) {
+    return this.quotesService.respondToQuote(request.user.sub, quoteId, false);
+  }
+
   @Patch(':id/price')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.chef)

@@ -33,6 +33,7 @@ import { ChefWorkspace } from './components/ChefWorkspace';
 import { FarmerAuth, FarmerWorkspace } from './components/FarmerWorkspace';
 import { FarmersMarketplace } from './components/FarmersMarketplace';
 import { Messaging, type MessagePartner } from './components/Messaging';
+import { CustomerRequests } from './components/CustomerRequests';
 import { authTokenStorage } from './lib/authTokenStorage';
 import { avatarUrl } from './lib/avatar';
 import { CalendarPicker, parseDateKey } from './components/CalendarPicker';
@@ -208,6 +209,7 @@ export default function App() {
   const [showFarmers, setShowFarmers] = useState(false);
   const [showCustomerMenu, setShowCustomerMenu] = useState(false);
   const [showMessages, setShowMessages] = useState(false);
+  const [showRequests, setShowRequests] = useState(false);
   const [messagePartner, setMessagePartner] = useState<MessagePartner | null>(null);
   const [isExistingCook, setIsExistingCook] = useState(false);
   const [showCustomerAuth, setShowCustomerAuth] = useState(false);
@@ -1120,6 +1122,17 @@ export default function App() {
             setShowFarmerAuth(false);
           }}
         />
+      ) : customerSessionToken && showRequests ? (
+        <CustomerRequests
+          token={customerSessionToken}
+          apiBaseUrl={apiBaseUrl}
+          onBack={() => setShowRequests(false)}
+          onMessage={(partner) => {
+            setShowRequests(false);
+            setMessagePartner(partner);
+            setShowMessages(true);
+          }}
+        />
       ) : customerSessionToken && showMessages ? (
         <Messaging
           token={customerSessionToken}
@@ -1559,6 +1572,17 @@ export default function App() {
               >
                 <Text style={styles.customerMenuItemTitle}>Preferences</Text>
                 <Text style={styles.customerMenuItemDetail}>Manage your food and location preferences</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  setShowCustomerMenu(false);
+                  setShowRequests(true);
+                }}
+                style={styles.customerMenuItem}
+              >
+                <Text style={styles.customerMenuItemTitle}>📋 My requests</Text>
+                <Text style={styles.customerMenuItemDetail}>View quotes from cooks and accept one</Text>
               </Pressable>
               <Pressable
                 accessibilityRole="button"
