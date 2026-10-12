@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { ChefPayoutSetup } from './ChefPayoutSetup';
+import { Messaging, type MessagePartner } from './Messaging';
 import { ChefVerificationChecklist } from './ChefVerificationChecklist';
 import { marketingContactRequiresOptIn } from '../lib/marketingRegions';
 
@@ -16,6 +17,31 @@ type WorkspaceCountry = {
   id: string;
   name: string;
   flag: string;
+  code?: string;
+};
+
+type ChefProfileDetails = {
+  displayName: string;
+  bio: string | null;
+  city: string | null;
+  state: string | null;
+  countryCode: string | null;
+  specialties: string[];
+  languages: string[];
+  serviceTypes: string[];
+  serviceRadiusKm: number | null;
+  profileImageUrl: string | null;
+  coverImageUrl: string | null;
+  serviceAreas: ChefServiceAreaDetails[];
+};
+
+type ChefServiceAreaDetails = {
+  city: string | null;
+  state: string | null;
+  countryCode: string | null;
+  radiusKm: number;
+  offersDelivery: boolean;
+  offersPickup: boolean;
 };
 
 type MenuEntry = {
@@ -34,6 +60,30 @@ type MenuTemplate = {
   description: string | null;
   serves: number | null;
   items: Array<{ menuEntry: MenuEntry }>;
+};
+
+type ChefBookingQuote = {
+  id: string;
+  status: string;
+  amount: string | number;
+  notes: string | null;
+  createdAt: string;
+};
+
+type ChefBookingRequest = {
+  id: string;
+  status: string;
+  serviceType: string;
+  requestedDate: string | null;
+  durationMinutes: number | null;
+  notes: string | null;
+  disclosedAllergens: string[];
+  dietaryRestrictions: string[];
+  allergyReviewStatus: string;
+  allergyResponseNote: string | null;
+  budget: string | number | null;
+  customer?: { id: string; name: string };
+  quotes: ChefBookingQuote[];
 };
 
 type ChefSocialLinks = {
@@ -69,9 +119,21 @@ const allergens = [
   'other',
 ];
 
+const serviceOptions = [
+  ['prepared_meals', 'Prepared meals'],
+  ['bulk_meal_prep', 'Meal prep'],
+  ['in_home_cooking', 'In-home cooking'],
+  ['grocery_shopping', 'Grocery shopping'],
+  ['special_event', 'Special events'],
+  ['postpartum', 'Postpartum meals'],
+  ['recurring', 'Recurring service'],
+] as const;
+
 function splitList(value: string) {
   return value.split(',').map((item) => item.trim()).filter(Boolean);
 }
+
+type ChefWorkspacePage = 'profile' | 'menu' | 'quotes' | 'messages' | 'verification' | 'payments' | 'policy';
 
 export function ChefWorkspace({
   token,
@@ -81,6 +143,10 @@ export function ChefWorkspace({
 }: ChefWorkspaceProps) {
   const [menu, setMenu] = useState<MenuEntry[]>([]);
   const [templates, setTemplates] = useState<MenuTemplate[]>([]);
+  const [quoteRequests, setQuoteRequests] = useState<ChefBookingRequest[]>([]);
+  const [quoteAmounts, setQuoteAmounts] = useState<Record<string, string>>({});
+  const [quoteNotes, setQuoteNotes] = useState<Record<string, string>>({});
+  const [allergyResponseNotes, setAllergyResponseNotes] = useState<Record<string, string>>({});
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [ingredients, setIngredients] = useState('');
@@ -107,6 +173,23 @@ export function ChefWorkspace({
   const [marketingContactSharing, setMarketingContactSharing] = useState(false);
   const [marketingCountryCode, setMarketingCountryCode] = useState('');
   const [marketingPreferenceTouched, setMarketingPreferenceTouched] = useState(false);
+  const [profileName, setProfileName] = useState('');
+  const [profileBio, setProfileBio] = useState('');
+  const [profileCity, setProfileCity] = useState('');
+  const [profileState, setProfileState] = useState('');
+  const [profileCountryCode, setProfileCountryCode] = useState('');
+  const [profileSpecialties, setProfileSpecialties] = useState('');
+  const [profileLanguages, setProfileLanguages] = useState('');
+  const [profileServiceTypes, setProfileServiceTypes] = useState<string[]>([]);
+  const [profileServiceRadius, setProfileServiceRadius] = useState('25');
+  const [profileImageUrl, setProfileImageUrl] = useState('');
+  const [coverImageUrl, setCoverImageUrl] = useState('');
+  const [offersDelivery, setOffersDelivery] = useState(false);
+  const [offersPickup, setOffersPickup] = useState(false);
+  const [profileServiceAreas, setProfileServiceAreas] = useState<ChefServiceAreaDetails[]>([]);
+  const [activePage, setActivePage] = useState<ChefWorkspacePage>('profile');
+  const [chatPartner, setChatPartner] = useState<MessagePartner | null>(null);
+  const [showWorkspaceMenu, setShowWorkspaceMenu] = useState(false);
 
   async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await fetch(`${apiBaseUrl}${path}`, {
@@ -129,15 +212,33 @@ export function ChefWorkspace({
     setIsLoading(true);
     setError(null);
     try {
-      const [entries, savedTemplates, savedSocialLinks, marketingPreference] = await Promise.all([
+      const [entries, savedTemplates, savedSocialLinks, marketingPreference, savedProfile, savedQuoteRequests] = await Promise.all([
         request<MenuEntry[]>('/chefs/me/menu'),
         request<MenuTemplate[]>('/chefs/me/menu-templates'),
         request<ChefSocialLinks>('/chefs/me/social-links'),
         request<MarketingContactPreference>('/auth/me/marketing-contact-preference'),
+        request<ChefProfileDetails>('/chefs/me/profile'),
+        request<ChefBookingRequest[]>('/quotes/requests'),
       ]);
       setMenu(entries);
       setTemplates(savedTemplates);
+      setQuoteRequests(savedQuoteRequests);
       setSocialLinks(savedSocialLinks);
+      setProfileName(savedProfile.displayName);
+      setProfileBio(savedProfile.bio ?? '');
+      setProfileCity(savedProfile.city ?? '');
+      setProfileState(savedProfile.state ?? '');
+      setProfileCountryCode(savedProfile.countryCode ?? '');
+      setProfileSpecialties(savedProfile.specialties.join(', '));
+      setProfileLanguages(savedProfile.languages.join(', '));
+      setProfileServiceTypes(savedProfile.serviceTypes);
+      setProfileServiceRadius(String(savedProfile.serviceRadiusKm ?? 25));
+      setProfileImageUrl(savedProfile.profileImageUrl ?? '');
+      setCoverImageUrl(savedProfile.coverImageUrl ?? '');
+      const serviceArea = savedProfile.serviceAreas[0];
+      setProfileServiceAreas(savedProfile.serviceAreas);
+      setOffersDelivery(Boolean(serviceArea?.offersDelivery));
+      setOffersPickup(Boolean(serviceArea?.offersPickup));
       setMarketingCountryCode(marketingPreference.marketingCountryCode ?? '');
       const hasSavedPreference = Boolean(marketingPreference.marketingContactSharingUpdatedAt);
       setMarketingContactSharing(hasSavedPreference
@@ -155,6 +256,82 @@ export function ChefWorkspace({
   useEffect(() => {
     void refresh();
   }, [token, apiBaseUrl]);
+
+  async function saveProfile() {
+    const countryCode = profileCountryCode.trim().toUpperCase();
+    const radiusKm = Number(profileServiceRadius);
+    if (profileName.trim().length < 2) {
+      setError('Enter a public cook or business name with at least 2 characters.');
+      return;
+    }
+    if (!/^[A-Z]{2}$/.test(countryCode)) {
+      setError('Enter a valid two-letter country code.');
+      return;
+    }
+    if (!profileCity.trim()) {
+      setError('Enter the city where you offer your cooking services.');
+      return;
+    }
+    if (profileServiceTypes.length === 0) {
+      setError('Choose at least one service you offer.');
+      return;
+    }
+    if (!Number.isInteger(radiusKm) || radiusKm < 1 || radiusKm > 500) {
+      setError('Enter a service radius between 1 and 500 km.');
+      return;
+    }
+    setIsSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await request<ChefProfileDetails>('/chefs/me/profile', {
+        method: 'POST',
+        body: JSON.stringify({
+          displayName: profileName.trim(),
+          bio: profileBio.trim(),
+          city: profileCity.trim(),
+          state: profileState.trim(),
+          countryCode,
+          specialties: splitList(profileSpecialties),
+          languages: splitList(profileLanguages),
+          serviceTypes: profileServiceTypes,
+          serviceRadiusKm: radiusKm,
+          profileImageUrl: profileImageUrl.trim() || null,
+          coverImageUrl: coverImageUrl.trim() || null,
+        }),
+      });
+      await request('/chefs/me/service-areas', {
+        method: 'PUT',
+        body: JSON.stringify({
+          areas: profileServiceAreas.length
+            ? [
+                {
+                  city: profileCity.trim(),
+                  state: profileState.trim(),
+                  countryCode,
+                  radiusKm,
+                  offersDelivery,
+                  offersPickup,
+                },
+                ...profileServiceAreas.slice(1),
+              ]
+            : [{
+                city: profileCity.trim(),
+                state: profileState.trim(),
+                countryCode,
+                radiusKm,
+                offersDelivery,
+                offersPickup,
+              }],
+        }),
+      });
+      setNotice('Your public cook profile and service area have been saved.');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not save your public cook profile.');
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   async function saveMarketingPreference() {
     setIsSaving(true);
@@ -332,6 +509,59 @@ export function ChefWorkspace({
     }
   }
 
+  async function sendQuote(booking: ChefBookingRequest) {
+    const amountText = (quoteAmounts[booking.id] ?? '').trim();
+    const amount = Number(amountText);
+    if (!/^\d+(?:\.\d{0,2})?$/.test(amountText) || !Number.isFinite(amount) || amount <= 0) {
+      setError('Enter a quote amount greater than $0 with no more than two decimal places.');
+      return;
+    }
+
+    setIsSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await request<ChefBookingQuote>(`/quotes/${booking.id}/chef-quote`, {
+        method: 'POST',
+        body: JSON.stringify({
+          amount,
+          notes: quoteNotes[booking.id]?.trim() || undefined,
+        }),
+      });
+      setQuoteAmounts((current) => ({ ...current, [booking.id]: '' }));
+      setQuoteNotes((current) => ({ ...current, [booking.id]: '' }));
+      setNotice('Your quote was sent to the customer. AfroChop will notify them to review it.');
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not send this quote.');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function respondToAllergyRequest(booking: ChefBookingRequest, canAccommodate: boolean) {
+    setIsSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await request(`/quotes/requests/${booking.id}/allergy-response`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          canAccommodate,
+          responseNote: allergyResponseNotes[booking.id]?.trim() || undefined,
+        }),
+      });
+      setNotice(canAccommodate
+        ? 'Allergy disclosure accepted. You can now prepare a quote.'
+        : 'The customer was notified that you cannot safely accommodate this request.');
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not respond to the allergy disclosure.');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   function toggleAllergen(allergen: string) {
     setSelectedAllergens((current) => current.includes(allergen)
       ? current.filter((item) => item !== allergen)
@@ -349,29 +579,226 @@ export function ChefWorkspace({
       <View style={styles.header}>
         <View style={styles.headerCopy}>
           <Text style={styles.eyebrow}>CHEF WORKSPACE</Text>
-          <Text style={styles.title}>Your menu, your way.</Text>
+          <Text style={styles.title}>
+            {activePage === 'profile' ? 'Your public profile'
+              : activePage === 'menu' ? 'Your menu'
+                : activePage === 'quotes' ? 'Quote requests'
+                : activePage === 'messages' ? 'Messages'
+                : activePage === 'verification' ? 'Verification'
+                  : activePage === 'payments' ? 'Payment setup'
+                    : 'Commission policy'}
+          </Text>
           <Text style={styles.subtitle}>
-            Add the dishes you cook and save reusable packages for parties. Customers ask you for a quote.
+            {activePage === 'profile' ? 'Show customers what you cook, where you serve, and how to find you.'
+              : activePage === 'menu' ? 'Build your dishes and reusable menus for customer requests.'
+                : activePage === 'quotes' ? 'Review customer requests and send a price directly to the customer.'
+                : activePage === 'messages' ? 'Chat with customers to agree on details before you quote.'
+                : activePage === 'verification' ? 'Review your identity and business verification progress.'
+                  : activePage === 'payments' ? 'Connect and manage your payout account.'
+                    : 'See how AfroChop’s sales commission works.'}
           </Text>
         </View>
-        <Pressable accessibilityRole="button" onPress={onSignOut} style={styles.signOut}>
-          <Text style={styles.signOutText}>Sign out</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={showWorkspaceMenu ? 'Close chef workspace menu' : 'Open chef workspace menu'}
+          accessibilityState={{ expanded: showWorkspaceMenu }}
+          onPress={() => setShowWorkspaceMenu((open) => !open)}
+          style={styles.menuButton}
+        >
+          <Text style={styles.menuButtonIcon}>{showWorkspaceMenu ? '×' : '☰'}</Text>
+          <Text style={styles.menuButtonLabel}>Menu</Text>
         </Pressable>
       </View>
+
+      {showWorkspaceMenu ? (
+        <View style={styles.workspaceMenu}>
+          <Text style={styles.menuHeading}>Workspace</Text>
+          {([
+            ['profile', 'Profile setup', 'Public profile and marketing details'],
+            ['menu', 'Menu & dishes', 'Dishes, ingredients and meal templates'],
+            ['quotes', 'Quote requests', 'Review requests and send customers a quote'],
+            ['messages', 'Messages', 'Chat and negotiate with customers'],
+            ['verification', 'Verification', 'Identity and permit review'],
+            ['payments', 'Payment setup', 'Stripe payouts'],
+            ['policy', 'Commission policy', 'AfroChop sales commission'],
+          ] as const).map(([page, label, detail]) => (
+            <Pressable
+              key={page}
+              accessibilityRole="button"
+              accessibilityState={{ selected: activePage === page }}
+              onPress={() => {
+                if (page === 'messages') setChatPartner(null);
+                setActivePage(page);
+                setShowWorkspaceMenu(false);
+                setError(null);
+                setNotice(null);
+              }}
+              style={[styles.menuItem, activePage === page && styles.menuItemSelected]}
+            >
+              <Text style={styles.menuItemTitle}>{label}</Text>
+              <Text style={styles.menuItemDetail}>{detail}</Text>
+            </Pressable>
+          ))}
+          <Pressable accessibilityRole="button" onPress={onSignOut} style={[styles.menuItem, styles.menuSignOut]}>
+            <Text style={styles.menuSignOutText}>Sign out</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       {notice ? <Text style={styles.notice}>{notice}</Text> : null}
       {isLoading ? <ActivityIndicator color="#185A43" /> : null}
 
-      <View style={styles.card}>
+      {activePage === 'verification' ? <View style={styles.card}>
         <Text style={styles.sectionTitle}>Your verification progress</Text>
         <Text style={styles.helper}>
           New cook profiles remain under review until AfroChop completes required checks.
         </Text>
         <ChefVerificationChecklist accessToken={token} />
-      </View>
-      <ChefPayoutSetup accessToken={token} />
+      </View> : null}
+      {activePage === 'payments' ? <ChefPayoutSetup accessToken={token} /> : null}
 
+      {activePage === 'policy' ? (
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>AfroChop sales commission</Text>
+          <Text style={styles.helper}>
+            AfroChop will collect a 10% commission on all sales made through the AfroChop platform.
+          </Text>
+          <Text style={styles.helper}>
+            Stripe identity checks and payout-account setup are managed separately in Payment setup.
+          </Text>
+        </View>
+      ) : null}
+
+      {activePage === 'profile' ? (
+      <>
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>Profile details</Text>
+        <Text style={styles.helper}>These details help customers understand your cooking and find your services.</Text>
+        <TextInput
+          accessibilityLabel="Public cook or business name"
+          placeholder="Public cook or business name"
+          value={profileName}
+          onChangeText={setProfileName}
+          style={styles.input}
+        />
+        <TextInput
+          accessibilityLabel="Profile biography"
+          placeholder="Tell customers about your food, experience and story"
+          value={profileBio}
+          onChangeText={setProfileBio}
+          multiline
+          style={[styles.input, styles.multiline]}
+        />
+        <TextInput
+          accessibilityLabel="Cuisine specialties"
+          placeholder="Cuisine specialties (comma separated)"
+          value={profileSpecialties}
+          onChangeText={setProfileSpecialties}
+          style={styles.input}
+        />
+        <TextInput
+          accessibilityLabel="Languages spoken"
+          placeholder="Languages spoken (comma separated)"
+          value={profileLanguages}
+          onChangeText={setProfileLanguages}
+          style={styles.input}
+        />
+        <Text style={styles.fieldLabel}>Services offered</Text>
+        <View style={styles.chipWrap}>
+          {serviceOptions.map(([value, label]) => {
+            const selected = profileServiceTypes.includes(value);
+            return (
+              <Pressable
+                key={value}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: selected }}
+                onPress={() => setProfileServiceTypes((current) => selected
+                  ? current.filter((item) => item !== value)
+                  : [...current, value])}
+                style={[styles.chip, selected && styles.chipSelected]}
+              >
+                <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Text style={styles.fieldLabel}>Service location</Text>
+        <TextInput
+          accessibilityLabel="Service country code"
+          autoCapitalize="characters"
+          maxLength={2}
+          placeholder="Two-letter country code (for example US)"
+          value={profileCountryCode}
+          onChangeText={setProfileCountryCode}
+          style={styles.input}
+        />
+        <TextInput
+          accessibilityLabel="Service city"
+          placeholder="City"
+          value={profileCity}
+          onChangeText={setProfileCity}
+          style={styles.input}
+        />
+        <TextInput
+          accessibilityLabel="Service state or region"
+          placeholder="State or region"
+          value={profileState}
+          onChangeText={setProfileState}
+          style={styles.input}
+        />
+        <TextInput
+          accessibilityLabel="Service radius in kilometers"
+          keyboardType="number-pad"
+          placeholder="Service radius in km"
+          value={profileServiceRadius}
+          onChangeText={setProfileServiceRadius}
+          style={styles.input}
+        />
+        {([
+          ['offersPickup', offersPickup, setOffersPickup, 'Offer pickup'],
+          ['offersDelivery', offersDelivery, setOffersDelivery, 'Offer delivery'],
+        ] as const).map(([key, selected, update, label]) => (
+          <Pressable
+            key={key}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: selected }}
+            onPress={() => update((value) => !value)}
+            style={styles.templateChoice}
+          >
+            <View style={[styles.checkbox, selected && styles.checkboxSelected]}>
+              {selected ? <Text style={styles.checkMark}>✓</Text> : null}
+            </View>
+            <Text style={styles.helper}>{label}</Text>
+          </Pressable>
+        ))}
+        <TextInput
+          accessibilityLabel="Profile photo URL"
+          autoCapitalize="none"
+          keyboardType="url"
+          placeholder="Profile photo URL (HTTPS)"
+          value={profileImageUrl}
+          onChangeText={setProfileImageUrl}
+          style={styles.input}
+        />
+        <TextInput
+          accessibilityLabel="Cover photo URL"
+          autoCapitalize="none"
+          keyboardType="url"
+          placeholder="Cover photo URL (HTTPS)"
+          value={coverImageUrl}
+          onChangeText={setCoverImageUrl}
+          style={styles.input}
+        />
+        <Pressable
+          accessibilityRole="button"
+          disabled={isSaving}
+          onPress={() => void saveProfile()}
+          style={[styles.primaryButton, isSaving && styles.disabled]}
+        >
+          <Text style={styles.primaryText}>{isSaving ? 'Saving…' : 'Save public profile'}</Text>
+        </Pressable>
+      </View>
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Promotional contact preference</Text>
         <Text style={styles.helper}>
@@ -499,7 +926,172 @@ export function ChefWorkspace({
           <Text style={styles.primaryText}>{isSaving ? 'Saving…' : 'Save social links'}</Text>
         </Pressable>
       </View>
+      </>
+      ) : null}
 
+      {activePage === 'messages' ? (
+        <View style={{ height: 560, borderRadius: 16, overflow: 'hidden' }}>
+          <Messaging
+            key={chatPartner?.id ?? 'inbox'}
+            token={token}
+            apiBaseUrl={apiBaseUrl}
+            initialPartner={chatPartner}
+            onBack={() => {
+              setChatPartner(null);
+              setActivePage(chatPartner ? 'quotes' : 'profile');
+            }}
+          />
+        </View>
+      ) : null}
+
+      {activePage === 'quotes' ? (
+      <>
+      {isLoading ? (
+        <View style={styles.card}>
+          <ActivityIndicator color="#185A43" />
+          <Text style={styles.helper}>Loading your quote requests…</Text>
+        </View>
+      ) : quoteRequests.filter((booking) => booking.status === 'requested' || booking.status === 'quoted').length === 0 ? (
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>No quote requests yet</Text>
+          <Text style={styles.helper}>New customer requests will appear here. You can review the details and send your quote from this page.</Text>
+        </View>
+      ) : quoteRequests
+        .filter((booking) => booking.status === 'requested' || booking.status === 'quoted')
+        .map((booking) => {
+          const latestQuote = booking.quotes[0];
+          const quoteAmount = Number(quoteAmounts[booking.id] ?? '');
+          const canShowEstimate = Number.isFinite(quoteAmount) && quoteAmount > 0;
+          const commission = canShowEstimate ? quoteAmount * 0.1 : 0;
+          const estimatedPayout = canShowEstimate ? quoteAmount - commission : 0;
+
+          return (
+            <View key={booking.id} style={styles.card}>
+              <Text style={styles.sectionTitle}>
+                {serviceOptions.find(([service]) => service === booking.serviceType)?.[1] ?? booking.serviceType.replaceAll('_', ' ')}
+              </Text>
+              <Text style={styles.helper}>
+                {booking.requestedDate
+                  ? new Date(booking.requestedDate).toLocaleString()
+                  : 'Date not provided'}
+                {booking.durationMinutes ? ` · ${booking.durationMinutes} minutes` : ''}
+              </Text>
+              {booking.customer ? (
+                <>
+                  <Text style={styles.helper}>Customer: {booking.customer.name}</Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => {
+                      const customer = booking.customer;
+                      if (!customer) return;
+                      setChatPartner({ id: customer.id, name: customer.name });
+                      setActivePage('messages');
+                    }}
+                    style={styles.secondaryButton}
+                  >
+                    <Text style={styles.secondaryText}>💬 Message customer</Text>
+                  </Pressable>
+                </>
+              ) : null}
+              {booking.notes ? <Text style={styles.helper}>Customer notes: {booking.notes}</Text> : null}
+              {booking.budget !== null ? (
+                <Text style={styles.helper}>Customer budget: ${Number(booking.budget).toFixed(2)}</Text>
+              ) : null}
+              {booking.disclosedAllergens.length > 0 ? (
+                <Text style={styles.allergenText}>
+                  Disclosed allergens: {booking.disclosedAllergens.map((item) => item.replaceAll('_', ' ')).join(', ')}
+                </Text>
+              ) : null}
+              {booking.dietaryRestrictions.length > 0 ? (
+                <Text style={styles.helper}>Dietary requests: {booking.dietaryRestrictions.join(', ')}</Text>
+              ) : null}
+              {booking.allergyResponseNote ? (
+                <Text style={styles.helper}>Your allergy response: {booking.allergyResponseNote}</Text>
+              ) : null}
+
+              {booking.allergyReviewStatus === 'pending' ? (
+                <>
+                  <Text style={styles.fieldLabel}>Review the allergy disclosure before quoting</Text>
+                  <Text style={styles.helper}>
+                    Confirm only if you can safely accommodate these allergens and prevent cross-contact. Declining will cancel this request.
+                  </Text>
+                  <TextInput
+                    accessibilityLabel="Allergy response note"
+                    placeholder="Note for the customer (optional)"
+                    value={allergyResponseNotes[booking.id] ?? ''}
+                    onChangeText={(value) => setAllergyResponseNotes((current) => ({ ...current, [booking.id]: value }))}
+                    multiline
+                    style={[styles.input, styles.multiline]}
+                  />
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={isSaving}
+                    onPress={() => void respondToAllergyRequest(booking, true)}
+                    style={[styles.primaryButton, isSaving && styles.disabled]}
+                  >
+                    <Text style={styles.primaryText}>{isSaving ? 'Saving…' : 'I can safely accommodate'}</Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={isSaving}
+                    onPress={() => void respondToAllergyRequest(booking, false)}
+                    style={[styles.secondaryButton, isSaving && styles.disabled]}
+                  >
+                    <Text style={styles.secondaryText}>I cannot safely accommodate</Text>
+                  </Pressable>
+                </>
+              ) : latestQuote ? (
+                <>
+                  <Text style={styles.quoteSummary}>
+                    Quote sent: ${Number(latestQuote.amount).toFixed(2)}
+                    {latestQuote.status === 'pending' ? ' · Awaiting customer response' : ` · ${latestQuote.status}`}
+                  </Text>
+                  {latestQuote.notes ? <Text style={styles.helper}>Quote details: {latestQuote.notes}</Text> : null}
+                </>
+              ) : (
+                <>
+                  <TextInput
+                    accessibilityLabel="Quote amount in dollars"
+                    keyboardType="decimal-pad"
+                    placeholder="Your quote amount ($)"
+                    value={quoteAmounts[booking.id] ?? ''}
+                    onChangeText={(value) => setQuoteAmounts((current) => ({ ...current, [booking.id]: value }))}
+                    style={styles.input}
+                  />
+                  <TextInput
+                    accessibilityLabel="Quote details for customer"
+                    placeholder="Details for the customer (optional)"
+                    value={quoteNotes[booking.id] ?? ''}
+                    onChangeText={(value) => setQuoteNotes((current) => ({ ...current, [booking.id]: value }))}
+                    multiline
+                    style={[styles.input, styles.multiline]}
+                  />
+                  {canShowEstimate ? (
+                    <Text style={styles.quoteSummary}>
+                      Estimated 10% commission: ${commission.toFixed(2)} · Estimated payout: ${estimatedPayout.toFixed(2)} before any other applicable fees.
+                    </Text>
+                  ) : null}
+                  <Text style={styles.commissionNotice}>
+                    AfroChop will deduct a 10% commission from this sale after the customer pays. Review the commission and estimated payout above before sending your quote.
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={isSaving}
+                    onPress={() => void sendQuote(booking)}
+                    style={[styles.primaryButton, isSaving && styles.disabled]}
+                  >
+                    <Text style={styles.primaryText}>{isSaving ? 'Sending quote…' : 'Send quote to customer'}</Text>
+                  </Pressable>
+                </>
+              )}
+            </View>
+          );
+        })}
+      </>
+      ) : null}
+
+      {activePage === 'menu' ? (
+      <>
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Add a dish or meal</Text>
         <TextInput
@@ -689,6 +1281,8 @@ export function ChefWorkspace({
           </View>
         ))}
       </View>
+      </>
+      ) : null}
     </ScrollView>
   );
 }
@@ -703,10 +1297,49 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 16,
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
   },
-  headerCopy: { flex: 1, paddingRight: 10 },
+  headerCopy: { flex: 1, paddingRight: 4 },
+  menuButton: {
+    minWidth: 54,
+    minHeight: 48,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#D7E3D9',
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuButtonIcon: { color: '#185A43', fontSize: 22, fontWeight: '800', lineHeight: 24 },
+  menuButtonLabel: { color: '#185A43', fontSize: 10, fontWeight: '700', marginTop: 1 },
+  workspaceMenu: {
+    backgroundColor: '#fff',
+    borderColor: '#E3D5BC',
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 12,
+    gap: 4,
+    marginBottom: 14,
+  },
+  menuHeading: {
+    color: '#756C61',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    textTransform: 'uppercase',
+  },
+  menuItem: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10 },
+  menuItemSelected: { backgroundColor: '#E8F0E9' },
+  menuItemTitle: { color: '#185A43', fontSize: 14, fontWeight: '800' },
+  menuItemDetail: { color: '#756C61', fontSize: 11, marginTop: 3 },
+  menuSignOut: { backgroundColor: '#F8EEDD', marginTop: 4 },
+  menuSignOutText: { color: '#B84F30', fontSize: 14, fontWeight: '800' },
   eyebrow: { color: '#B84F30', fontSize: 10, fontWeight: '800', letterSpacing: 1.2 },
   title: { color: '#3A2E22', fontSize: 28, fontWeight: '800', marginTop: 5 },
   subtitle: { color: '#756C61', fontSize: 13, lineHeight: 19, marginTop: 6 },
@@ -753,6 +1386,37 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
   primaryText: { color: '#fff', fontWeight: '800', fontSize: 13 },
+  secondaryButton: {
+    alignItems: 'center',
+    borderColor: '#D7E3D9',
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginTop: 8,
+  },
+  secondaryText: { color: '#185A43', fontWeight: '800', fontSize: 13 },
+  commissionNotice: {
+    color: '#654A20',
+    backgroundColor: '#FFF4D8',
+    borderColor: '#E9D49B',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 11,
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  quoteSummary: {
+    color: '#185A43',
+    backgroundColor: '#E8F0E9',
+    borderRadius: 10,
+    padding: 10,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '700',
+    marginBottom: 9,
+  },
   disabled: { opacity: 0.55 },
   listItem: {
     flexDirection: 'row',

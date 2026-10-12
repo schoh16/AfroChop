@@ -20,7 +20,7 @@ import { PaymentConfigurationDto } from './dto/payment-configuration.dto.js';
 
 export const STRIPE_CLIENT = Symbol('STRIPE_CLIENT');
 const PAYMENT_CONFIGURATION_ID = 'default';
-const INITIAL_CHEF_COMMISSION_BPS = 1_500;
+const INITIAL_CHEF_COMMISSION_BPS = 1_000;
 const INITIAL_CUSTOMER_FEE_BPS = 0;
 const REFRESH_TOKEN_LIFETIME_MS = 60 * 60 * 1000;
 const LOGGER = new Logger('PaymentsService');

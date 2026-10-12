@@ -70,6 +70,7 @@ export class QuotesService {
       where: { chefId: chef.id },
       orderBy: { createdAt: 'desc' },
       include: {
+        customer: { select: { id: true, name: true } },
         quotes: { where: { chefId: chef.id }, orderBy: { createdAt: 'desc' } },
       },
     });

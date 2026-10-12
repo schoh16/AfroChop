@@ -51,6 +51,13 @@ export class ChefsController {
     return this.chefsService.saveProfile(request.user.sub, dto);
   }
 
+  @Get('me/profile')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.chef)
+  getMyProfile(@Req() request: AuthenticatedRequest) {
+    return this.chefsService.getMyProfile(request.user.sub);
+  }
+
   @Get('me/social-links')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.chef)

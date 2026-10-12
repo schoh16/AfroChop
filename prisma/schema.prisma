@@ -498,12 +498,14 @@ model Message {
   senderId    String   @db.Uuid
   recipientId String   @db.Uuid
   content     String
+  readAt      DateTime?
   createdAt   DateTime @default(now())
 
   sender    User @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
   recipient User @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: Cascade)
 
   @@index([senderId, recipientId, createdAt])
+  @@index([recipientId, readAt])
   @@map("messages")
 }
 
@@ -769,7 +771,7 @@ model StripeConnectedAccount {
 
 model PaymentConfiguration {
   id                        String   @id @default("default")
-  chefCommissionBps         Int      @default(1500)
+  chefCommissionBps         Int      @default(1000)
   customerMarketplaceFeeBps Int      @default(0)
   updatedAt                 DateTime @updatedAt
 

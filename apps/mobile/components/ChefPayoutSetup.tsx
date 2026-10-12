@@ -30,7 +30,6 @@ type PayoutStatus = {
     pastDue?: string[];
   } | null;
   disabledReason: string | null;
-  chefCommissionPercent: number;
   lastSyncedAt: string | null;
 };
 
@@ -125,7 +124,7 @@ export function ChefPayoutSetup({ accessToken }: { accessToken: string }) {
             </Text>
           </View>
           <Text style={styles.body}>
-            Chef commission: {status.chefCommissionPercent}%. Stripe verifies your identity and payout account.
+            Stripe verifies your identity and payout account. View AfroChop’s sales commission in the Commission policy page.
           </Text>
           {status.disabledReason ? (
             <Text style={styles.warning}>Stripe status: {status.disabledReason}</Text>

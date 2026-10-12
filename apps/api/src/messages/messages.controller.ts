@@ -39,6 +39,16 @@ export class MessagesController {
     return this.messagesService.send(request.user.sub, dto);
   }
 
+  @Get('conversations')
+  conversations(@Req() request: AuthenticatedRequest) {
+    return this.messagesService.listConversations(request.user.sub);
+  }
+
+  @Get('unread-count')
+  unreadCount(@Req() request: AuthenticatedRequest) {
+    return this.messagesService.unreadCount(request.user.sub);
+  }
+
   @Get('with/:userId')
   conversation(
     @Req() request: AuthenticatedRequest,

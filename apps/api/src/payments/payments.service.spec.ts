@@ -255,11 +255,11 @@ describe('PaymentsService Connect onboarding and configuration', () => {
     });
   });
 
-  it('initializes payment configuration at 15% commission and zero customer fee', async () => {
+  it('initializes payment configuration at 10% commission and zero customer fee', async () => {
     prisma.paymentConfiguration.findUnique.mockResolvedValueOnce(null);
     prisma.paymentConfiguration.create.mockResolvedValue({
       id: 'default',
-      chefCommissionBps: 1500,
+      chefCommissionBps: 1000,
       customerMarketplaceFeeBps: 0,
       updatedAt: new Date(),
     });
@@ -269,11 +269,11 @@ describe('PaymentsService Connect onboarding and configuration', () => {
     expect(prisma.paymentConfiguration.create).toHaveBeenCalledWith({
       data: {
         id: 'default',
-        chefCommissionBps: 1500,
+        chefCommissionBps: 1000,
         customerMarketplaceFeeBps: 0,
       },
     });
-    expect(result.chefCommissionPercent).toBe(15);
+    expect(result.chefCommissionPercent).toBe(10);
   });
 
   it('audits administrator changes to commission and customer fee settings', async () => {

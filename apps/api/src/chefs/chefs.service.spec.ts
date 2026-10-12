@@ -10,6 +10,7 @@ describe('ChefsService profile setup', () => {
     },
     chefProfile: {
       findUnique: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
       findFirst: vi.fn(),
       upsert: vi.fn(),
       findMany: vi.fn(),
@@ -56,6 +57,24 @@ describe('ChefsService profile setup', () => {
         create: expect.objectContaining({ countryCode: 'US' }),
       }),
     );
+  });
+
+  it('returns the chef profile with its service areas for workspace editing', async () => {
+    prisma.chefProfile.findUnique.mockResolvedValueOnce({ id: 'chef-profile-id' });
+    prisma.chefProfile.findUniqueOrThrow.mockResolvedValue({
+      id: 'chef-profile-id',
+      displayName: 'Chef Amara',
+      serviceAreas: [{ city: 'Brooklyn', state: 'NY', radiusKm: 25 }],
+    });
+
+    await expect(service.getMyProfile('chef-user-id')).resolves.toMatchObject({
+      id: 'chef-profile-id',
+      serviceAreas: [{ city: 'Brooklyn', state: 'NY', radiusKm: 25 }],
+    });
+    expect(prisma.chefProfile.findUniqueOrThrow).toHaveBeenCalledWith({
+      where: { id: 'chef-profile-id' },
+      include: { serviceAreas: true },
+    });
   });
 
   it('does not change the connected account country through profile editing', async () => {

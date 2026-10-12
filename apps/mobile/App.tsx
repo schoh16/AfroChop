@@ -32,6 +32,7 @@ import {
 import { ChefWorkspace } from './components/ChefWorkspace';
 import { FarmerAuth, FarmerWorkspace } from './components/FarmerWorkspace';
 import { FarmersMarketplace } from './components/FarmersMarketplace';
+import { Messaging, type MessagePartner } from './components/Messaging';
 import { authTokenStorage } from './lib/authTokenStorage';
 import { avatarUrl } from './lib/avatar';
 import { CalendarPicker, parseDateKey } from './components/CalendarPicker';
@@ -89,6 +90,7 @@ type MarketCountry = {
 
 type ChefSummary = {
   id: string;
+  userId?: string;
   displayName: string;
   bio: string | null;
   city: string | null;
@@ -204,6 +206,9 @@ export default function App() {
   const [farmerSessionToken, setFarmerSessionToken] = useState<string | null>(null);
   const [showFarmerAuth, setShowFarmerAuth] = useState(false);
   const [showFarmers, setShowFarmers] = useState(false);
+  const [showCustomerMenu, setShowCustomerMenu] = useState(false);
+  const [showMessages, setShowMessages] = useState(false);
+  const [messagePartner, setMessagePartner] = useState<MessagePartner | null>(null);
   const [isExistingCook, setIsExistingCook] = useState(false);
   const [showCustomerAuth, setShowCustomerAuth] = useState(false);
   const [customerName, setCustomerName] = useState('');
@@ -317,6 +322,7 @@ export default function App() {
   }
 
   function resetCustomerHome() {
+    setShowCustomerMenu(false);
     setSelectedChef(null);
     setChefReviews(null);
     setBookingOpen(false);
@@ -344,6 +350,7 @@ export default function App() {
     setCustomerSessionToken(null);
     setCustomerDisplayName(null);
     setShowFarmers(false);
+    setShowCustomerMenu(false);
     setShowCustomerAuth(false);
     setCustomerOnboarding(false);
     setGuideRole(null);
@@ -1113,6 +1120,16 @@ export default function App() {
             setShowFarmerAuth(false);
           }}
         />
+      ) : customerSessionToken && showMessages ? (
+        <Messaging
+          token={customerSessionToken}
+          apiBaseUrl={apiBaseUrl}
+          initialPartner={messagePartner}
+          onBack={() => {
+            setShowMessages(false);
+            setMessagePartner(null);
+          }}
+        />
       ) : customerSessionToken && showFarmers ? (
         <FarmersMarketplace
           token={customerSessionToken}
@@ -1503,60 +1520,79 @@ export default function App() {
         ) : customerSessionToken ? (
         <>
         <View style={styles.topRow}>
-          <View>
+          <View style={styles.customerHeader}>
+            <View style={styles.customerHeaderCopy}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Go to home and start fresh"
+                onPress={resetCustomerHome}
+                style={styles.brandRow}
+              >
+                <Text style={styles.brandMark}>🍲</Text>
+                <Text style={styles.eyebrow}>AfroChop</Text>
+                <Text style={styles.homeLinkText}>⌂ Home</Text>
+              </Pressable>
+              <Text style={styles.title}>A taste of home, nearby.</Text>
+              <Text style={styles.tagline}>Find African cooks in your area.</Text>
+            </View>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Go to home and start fresh"
-              onPress={resetCustomerHome}
-              style={styles.brandRow}
+              accessibilityLabel={showCustomerMenu ? 'Close app menu' : 'Open app menu'}
+              accessibilityState={{ expanded: showCustomerMenu }}
+              onPress={() => setShowCustomerMenu((open) => !open)}
+              style={styles.menuButton}
             >
-              <Text style={styles.brandMark}>🍲</Text>
-              <Text style={styles.eyebrow}>AfroChop</Text>
-              <Text style={styles.homeLinkText}>⌂ Home</Text>
+              <Text style={styles.menuButtonIcon}>{showCustomerMenu ? '×' : '☰'}</Text>
+              <Text style={styles.menuButtonLabel}>Menu</Text>
             </Pressable>
-            <Text style={styles.title}>A taste of home, nearby.</Text>
-            <Text style={styles.tagline}>Find African cooks in your area.</Text>
           </View>
-          <View style={styles.accountLinks}>
-            {customerSessionToken ? (
-              <>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => setShowFarmers(true)}
-                  style={styles.preferenceLink}
-                >
-                  <Text style={styles.preferenceLinkText}>🌽 Farmers</Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => setCustomerOnboarding(true)}
-                  style={styles.preferenceLink}
-                >
-                  <Text style={styles.preferenceLinkText}>Preferences</Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Sign out of your customer account"
-                  onPress={() => void signOutCustomer()}
-                  style={styles.cookLink}
-                >
-                  <Text style={styles.cookLinkText}>Sign out</Text>
-                </Pressable>
-              </>
-            ) : (
+          {showCustomerMenu ? (
+            <View style={styles.customerMenu}>
+              <Text style={styles.customerMenuHeading}>Account & settings</Text>
               <Pressable
                 accessibilityRole="button"
                 onPress={() => {
-                  setShowCustomerAuth(true);
-                  setIsExistingCustomer(true);
-                  setCustomerAuthMessage(null);
+                  setShowCustomerMenu(false);
+                  setCustomerOnboarding(true);
                 }}
-                style={styles.cookLink}
+                style={styles.customerMenuItem}
               >
-                <Text style={styles.cookLinkText}>Customer sign in</Text>
+                <Text style={styles.customerMenuItemTitle}>Preferences</Text>
+                <Text style={styles.customerMenuItemDetail}>Manage your food and location preferences</Text>
               </Pressable>
-            )}
-          </View>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  setShowCustomerMenu(false);
+                  setMessagePartner(null);
+                  setShowMessages(true);
+                }}
+                style={styles.customerMenuItem}
+              >
+                <Text style={styles.customerMenuItemTitle}>💬 Messages</Text>
+                <Text style={styles.customerMenuItemDetail}>Chat with cooks and negotiate your order</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  setShowCustomerMenu(false);
+                  setShowFarmers(true);
+                }}
+                style={styles.customerMenuItem}
+              >
+                <Text style={styles.customerMenuItemTitle}>🌽 Local farmers</Text>
+                <Text style={styles.customerMenuItemDetail}>Browse nearby produce and requests</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Sign out of your customer account"
+                onPress={() => void signOutCustomer()}
+                style={[styles.customerMenuItem, styles.customerMenuSignOut]}
+              >
+                <Text style={styles.customerMenuSignOutText}>Sign out</Text>
+              </Pressable>
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.locationBlock}>
@@ -1838,6 +1874,26 @@ export default function App() {
                 Reviews are tied to completed bookings. Report or appeal requests are reviewed without removing genuine criticism solely because it is negative.
               </Text>
             </View>
+            {selectedChef.userId ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Message ${selectedChef.displayName}`}
+                style={[styles.primaryButton, { marginBottom: 8 }]}
+                onPress={() => {
+                  if (!customerSessionToken) {
+                    setBookingOpen(true);
+                    setShowCustomerAuth(true);
+                    setIsExistingCustomer(true);
+                    setCustomerAuthMessage(null);
+                    return;
+                  }
+                  setMessagePartner({ id: selectedChef.userId as string, name: selectedChef.displayName });
+                  setShowMessages(true);
+                }}
+              >
+                <Text style={styles.primaryButtonText}>💬 Message cook</Text>
+              </Pressable>
+            ) : null}
             <Pressable
               style={styles.primaryButton}
               onPress={() => {
@@ -2400,19 +2456,62 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   topRow: {
-    flexDirection: 'column',
     alignItems: 'stretch',
-    gap: 8,
+    gap: 12,
     marginBottom: 16,
   },
-  accountLinks: {
+  customerHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    justifyContent: 'flex-start',
-    gap: 8,
-    maxWidth: '100%',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
   },
+  customerHeaderCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  menuButton: {
+    minWidth: 52,
+    minHeight: 48,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#D7E3D9',
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuButtonIcon: { color: colors.forest, fontSize: 22, fontWeight: '800', lineHeight: 24 },
+  menuButtonLabel: { color: colors.forest, fontSize: 10, fontWeight: '700', marginTop: 1 },
+  customerMenu: {
+    backgroundColor: '#fff',
+    borderColor: '#E3D5BC',
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 12,
+    gap: 4,
+  },
+  customerMenuHeading: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    textTransform: 'uppercase',
+  },
+  customerMenuItem: {
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  customerMenuItemTitle: { color: colors.forest, fontSize: 14, fontWeight: '800' },
+  customerMenuItemDetail: { color: colors.muted, fontSize: 11, marginTop: 3 },
+  customerMenuSignOut: { backgroundColor: '#F8EEDD', marginTop: 4 },
+  customerMenuSignOutText: { color: colors.terracotta, fontSize: 14, fontWeight: '800' },
   eyebrow: {
     fontSize: 12,
     letterSpacing: 1.2,
@@ -2453,9 +2552,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
   },
-  preferenceLink: { minHeight: 36, justifyContent: 'center', paddingHorizontal: 10 },
   homeLinkText: { color: colors.forest, fontSize: 12, fontWeight: '800', marginLeft: 6 },
-  preferenceLinkText: { color: colors.forest, fontSize: 11, fontWeight: '700' },
   locationBlock: {
     backgroundColor: '#fff',
     borderColor: '#EEE6DA',

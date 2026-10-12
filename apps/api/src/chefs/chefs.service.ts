@@ -76,6 +76,14 @@ export class ChefsService {
     return profile;
   }
 
+  async getMyProfile(userId: string) {
+    const chef = await this.findChefByUserId(userId);
+    return this.prisma.chefProfile.findUniqueOrThrow({
+      where: { id: chef.id },
+      include: { serviceAreas: true },
+    });
+  }
+
   async getMyMenu(userId: string) {
     const chef = await this.findChefByUserId(userId);
     return this.prisma.chefMenuEntry.findMany({
@@ -587,6 +595,7 @@ export class ChefsService {
       where: { id, isPublic: true, verificationStatus: 'approved' },
       select: {
         id: true,
+        userId: true,
         displayName: true,
         bio: true,
         city: true,
