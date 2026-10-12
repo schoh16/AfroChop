@@ -184,7 +184,7 @@ export function Messaging({ token, apiBaseUrl, initialPartner = null, onBack }: 
           <ActivityIndicator color="#c2410c" />
         ) : messages.length === 0 ? (
           <Text style={styles.empty}>
-            Say hello! Share your date, guest count and budget so {partner.name} can send you a quote.
+            No messages yet. Say hello to {partner.name} to discuss the date, guest count, budget and menu.
           </Text>
         ) : (
           messages.map((message) => {
