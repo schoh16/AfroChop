@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { Type } from 'class-transformer';
 import { IsInt, Max, Min } from 'class-validator';
+import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import type { AuthenticatedRequest } from '../auth/jwt-auth.guard.js';
 import { SendMessageDto } from './dto/send-message.dto.js';
@@ -35,6 +36,7 @@ export class MessagesController {
   constructor(private readonly messagesService: MessagesService) {}
 
   @Post()
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
   send(@Req() request: AuthenticatedRequest, @Body() dto: SendMessageDto) {
     return this.messagesService.send(request.user.sub, dto);
   }

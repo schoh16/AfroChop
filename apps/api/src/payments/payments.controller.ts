@@ -11,6 +11,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import { UserRole } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
@@ -74,6 +75,7 @@ export class PaymentsController {
   }
 
   @Post('webhooks/stripe')
+  @SkipThrottle()
   @Header('Cache-Control', 'no-store')
   handleStripeWebhook(
     @Req() request: RawBodyRequest,
