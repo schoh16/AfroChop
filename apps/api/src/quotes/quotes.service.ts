@@ -194,7 +194,7 @@ export class QuotesService {
     });
     if (!request) throw new NotFoundException('Booking request not found.');
     if (request.chefId !== chef.id) {
-      throw new ForbiddenException('You cannot respond to another chef’s booking request.');
+      throw new ForbiddenException('You cannot respond to another chefâ€™s booking request.');
     }
     if (!request.disclosedAllergens.length || request.allergyReviewStatus !== 'pending') {
       throw new BadRequestException('This request is not awaiting an allergy safety response.');
@@ -242,11 +242,11 @@ export class QuotesService {
       throw new NotFoundException('Booking request not found.');
     }
     if (request.chefId !== chef.id) {
-      throw new ForbiddenException('You cannot quote another chef’s booking request.');
+      throw new ForbiddenException('You cannot quote another chefâ€™s booking request.');
     }
     if (request.allergyReviewStatus === 'pending') {
       throw new BadRequestException(
-        'Review and respond to the customer’s allergy disclosure before quoting.',
+        'Review and respond to the customerâ€™s allergy disclosure before quoting.',
       );
     }
     if (request.allergyReviewStatus === 'declined') {
@@ -382,7 +382,7 @@ export class QuotesService {
 
     if (!request) throw new NotFoundException('Booking request not found.');
     if (request.chefId !== chef.id) {
-      throw new ForbiddenException('You cannot submit a receipt for another chef’s booking.');
+      throw new ForbiddenException('You cannot submit a receipt for another chefâ€™s booking.');
     }
     if (request.serviceType !== 'grocery_shopping') {
       throw new BadRequestException('Receipts are only accepted for grocery-shopping services.');
@@ -417,7 +417,7 @@ export class QuotesService {
     const isAssignedChef =
       role === UserRole.chef && booking.chef?.userId === userId;
     if (!isCustomer && !isAssignedChef) {
-      throw new ForbiddenException('You cannot confirm another user’s booking completion.');
+      throw new ForbiddenException('You cannot confirm another userâ€™s booking completion.');
     }
     if (
       booking.status !== BookingStatus.confirmed &&
