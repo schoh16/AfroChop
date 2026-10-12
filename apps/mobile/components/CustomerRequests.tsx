@@ -152,7 +152,7 @@ export function CustomerRequests({ token, apiBaseUrl, onBack, onMessage }: Props
                       <Text style={styles.detail}>From {quote.chef.displayName}</Text>
                       <Text style={styles.amount}>${amount.toFixed(2)}</Text>
                       <Text style={styles.detail}>
-                        {quote.downPaymentPercent}% deposit (${((amount * quote.downPaymentPercent) / 100).toFixed(2)}) due to confirm
+                        Full payment due to confirm your booking
                       </Text>
                       {quote.notes ? <Text style={styles.detail}>{quote.notes}</Text> : null}
                       {quote.status === 'pending' && request.status === 'quoted' ? (
@@ -183,7 +183,7 @@ export function CustomerRequests({ token, apiBaseUrl, onBack, onMessage }: Props
                           style={styles.accept}
                         >
                           <Text style={styles.acceptText}>
-                            Pay ${((amount * quote.downPaymentPercent) / 100).toFixed(2)} deposit
+                            Pay ${amount.toFixed(2)}
                           </Text>
                         </Pressable>
                       ) : null}

@@ -345,13 +345,11 @@ export class PaymentsService {
     if (!quote) throw new NotFoundException('Quote not found.');
     const booking = quote.bookingRequest;
     if (quote.status !== 'accepted' || booking.status !== 'awaiting_payment') {
-      throw new ConflictException('Accept the quote before paying the deposit.');
+      throw new ConflictException('Accept the quote before paying.');
     }
 
-    const depositCents = Math.round(
-      Number(quote.amount) * 100 * (quote.downPaymentPercent / 100),
-    );
-    if (depositCents < 50) throw new BadRequestException('Deposit is too small to charge.');
+    const depositCents = Math.round(Number(quote.amount) * 100);
+    if (depositCents < 50) throw new BadRequestException('The amount is too small to charge.');
     const returnBase =
       this.config.get<string>('CHECKOUT_RETURN_URL') ?? 'http://localhost:8081';
     const configuration = await this.ensurePaymentConfiguration();
@@ -366,7 +364,7 @@ export class PaymentsService {
           price_data: {
             currency: 'usd',
             unit_amount: depositCents,
-            product_data: { name: `AfroChop deposit (${quote.downPaymentPercent}%)` },
+            product_data: { name: 'AfroChop order payment' },
           },
         },
       ],

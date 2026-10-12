@@ -1059,7 +1059,7 @@ export function ChefWorkspace({
                     {latestQuote.status === 'pending'
                       ? ' · Awaiting customer response'
                       : latestQuote.status === 'accepted'
-                        ? ' · Accepted by customer — awaiting deposit'
+                        ? ' · Accepted by customer — awaiting payment'
                         : ` · ${latestQuote.status}`}
                   </Text>
                   {latestQuote.notes ? <Text style={styles.helper}>Quote details: {latestQuote.notes}</Text> : null}

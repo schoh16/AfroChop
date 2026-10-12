@@ -32,12 +32,12 @@ const accepted = {
 };
 
 describe('deposit checkout', () => {
-  it('charges the deposit percentage of the quote', async () => {
+  it('charges the full quote amount', async () => {
     const { service, stripe, prisma } = build(accepted);
     await service.createDepositCheckout('c1', 'q1');
     const args = stripe.checkout.sessions.create.mock.calls[0][0];
-    expect(args.line_items[0].price_data.unit_amount).toBe(22500);
-    expect(args.metadata.platformFeeCents).toBe('2250');
+    expect(args.line_items[0].price_data.unit_amount).toBe(45000);
+    expect(args.metadata.platformFeeCents).toBe('4500');
     expect(prisma.bookingRequest.update).toHaveBeenCalled();
   });
 
