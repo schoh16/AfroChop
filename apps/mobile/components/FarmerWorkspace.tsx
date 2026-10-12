@@ -141,15 +141,21 @@ export function FarmerWorkspace({
   const [price, setPrice] = useState('');
   const [unit, setUnit] = useState('');
   const [description, setDescription] = useState('');
+  const [needsProfile, setNeedsProfile] = useState(false);
+  const [farmName, setFarmName] = useState('');
+  const [farmCity, setFarmCity] = useState('');
+  const [farmState, setFarmState] = useState('');
 
   const load = useCallback(async () => {
     try {
-      const [p, i] = await Promise.all([
-        api<FarmerProfile>('/farmers/me/profile'),
-        api<FarmInquiry[]>('/farmers/me/inquiries'),
-      ]);
+      const p = await api<FarmerProfile>('/farmers/me/profile').catch(() => null);
+      if (!p) {
+        setNeedsProfile(true);
+        return;
+      }
+      setNeedsProfile(false);
       setProfile(p);
-      setInquiries(i);
+      setInquiries(await api<FarmInquiry[]>('/farmers/me/inquiries'));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load your farm.');
     } finally {
@@ -197,6 +203,43 @@ export function FarmerWorkspace({
 
   if (loading) {
     return <View style={s.center}><ActivityIndicator color={c.forest} /></View>;
+  }
+
+  if (needsProfile) {
+    return (
+      <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+        <AfroChopLogo />
+        <Text style={s.title}>Set up your farm</Text>
+        <Text style={s.muted}>Tell customers where to find you. You can add produce next.</Text>
+        {error ? <Text style={s.error}>{error}</Text> : null}
+        <AuthInput label="Farm name" onChangeText={setFarmName} value={farmName} />
+        <AuthInput label="City" onChangeText={setFarmCity} value={farmCity} />
+        <AuthInput label="State" onChangeText={setFarmState} value={farmState} />
+        <PrimaryButton
+          label="Save farm profile"
+          onPress={() => {
+            if (!farmName.trim() || !farmCity.trim()) {
+              setError('Enter your farm name and city.');
+              return;
+            }
+            void run(
+              () => api('/farmers/me/profile', {
+                method: 'PUT',
+                body: JSON.stringify({
+                  farmName: farmName.trim(),
+                  city: farmCity.trim(),
+                  state: farmState.trim() || undefined,
+                  countryCode: 'US',
+                  offersPickup: true,
+                }),
+              }),
+              'Farm profile saved.',
+            );
+          }}
+        />
+        <PrimaryButton label="Sign out" secondary onPress={onSignOut} />
+      </ScrollView>
+    );
   }
 
   return (
