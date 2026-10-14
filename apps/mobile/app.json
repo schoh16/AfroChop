@@ -7,9 +7,14 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.afrochop.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
+      "package": "com.afrochop.app",
       "adaptiveIcon": {
         "backgroundColor": "#F8EEDD",
         "foregroundImage": "./assets/android-icon-foreground.png",
