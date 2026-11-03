@@ -105,6 +105,9 @@ The `testflight` profile creates a store-signed build connected to
 `https://afrochop-api.onrender.com/api`, with a separate `testflight` update
 channel. App version `1.0.1` also separates its native runtime from earlier
 `1.0.0` builds.
+Mobile build profiles set `SHARP_IGNORE_GLOBAL_LIBVIPS=1` so the API's
+workspace dependency uses prebuilt Sharp binaries rather than detecting the
+Mac builder's global libvips and attempting an unnecessary source build.
 
 Deploy the API and apply its migrations before distributing the mobile build.
 The Render Docker startup runs `prisma migrate deploy`. Configure the server's

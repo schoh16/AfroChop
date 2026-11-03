@@ -8,6 +8,7 @@
       "distribution": "internal",
       "channel": "preview",
       "env": {
+        "SHARP_IGNORE_GLOBAL_LIBVIPS": "1",
         "EXPO_PUBLIC_API_URL": "https://afrochop-api.onrender.com/api"
       }
     },
@@ -20,6 +21,7 @@
       "autoIncrement": true,
       "channel": "production",
       "env": {
+        "SHARP_IGNORE_GLOBAL_LIBVIPS": "1",
         "EXPO_PUBLIC_API_URL": "https://afrochop-api.onrender.com/api"
       }
     }
