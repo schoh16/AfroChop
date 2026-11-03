@@ -17,8 +17,10 @@ import { createHash, randomBytes } from 'node:crypto';
 import Stripe from 'stripe';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { PaymentConfigurationDto } from './dto/payment-configuration.dto.js';
+import { BookingMoneyService } from './booking-money.service.js';
+import { STRIPE_CLIENT } from './payments.constants.js';
 
-export const STRIPE_CLIENT = Symbol('STRIPE_CLIENT');
+export { STRIPE_CLIENT } from './payments.constants.js';
 const PAYMENT_CONFIGURATION_ID = 'default';
 const INITIAL_CHEF_COMMISSION_BPS = 1_000;
 const INITIAL_CUSTOMER_FEE_BPS = 0;
@@ -55,6 +57,7 @@ export class PaymentsService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     @Inject(STRIPE_CLIENT) private readonly stripeClient: Stripe | null,
+    private readonly money: BookingMoneyService,
   ) {}
 
   async getCustomerPaymentConfiguration() {
@@ -282,10 +285,20 @@ export class PaymentsService {
       throw new UnauthorizedException('Stripe webhook signature verification failed.');
     }
 
-    if (event.type === 'checkout.session.completed') {
+    if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
       const session = event.data.object as Stripe.Checkout.Session;
       if (session.payment_status === 'paid' && session.client_reference_id) {
-        await this.markDepositPaid(session.client_reference_id);
+        await this.markDepositPaid(session.client_reference_id, session.id);
+      }
+      return { received: true };
+    }
+    if (await this.money.handleEvent(event)) return { received: true };
+    if (event.type === 'checkout.session.expired') {
+      const session = event.data.object as Stripe.Checkout.Session;
+      const bookingId = session.client_reference_id ?? session.metadata?.bookingId;
+      const quoteId = session.metadata?.quoteId;
+      if (bookingId && quoteId) {
+        await this.markDepositExpired(bookingId, quoteId, session.id);
       }
       return { received: true };
     }
@@ -338,6 +351,10 @@ export class PaymentsService {
 
   async createDepositCheckout(customerId: string, quoteId: string) {
     const stripe = this.requireStripe();
+    this.money.assertLivePaymentsAllowed(
+      this.config.get<string>('STRIPE_SECRET_KEY')?.startsWith('sk_live_') === true ||
+      this.config.get<string>('STRIPE_SECRET_KEY')?.startsWith('rk_live_') === true,
+    );
     const quote = await this.prisma.quote.findFirst({
       where: { id: quoteId, bookingRequest: { customerId } },
       include: { bookingRequest: true },
@@ -347,37 +364,94 @@ export class PaymentsService {
     if (quote.status !== 'accepted' || booking.status !== 'awaiting_payment') {
       throw new ConflictException('Accept the quote before paying.');
     }
+    const now = new Date();
+    if (!booking.paymentHoldExpiresAt || booking.paymentHoldExpiresAt <= now) {
+      throw new ConflictException('The 24-hour payment hold expired. Request a new quote to continue.');
+    }
+    if (booking.paymentHoldExpiresAt.getTime() < now.getTime() + 30 * 60 * 1000) {
+      throw new ConflictException('The payment hold is nearly expired. Request a new quote to continue.');
+    }
+    if (booking.stripeCheckoutSessionId) {
+      const existingSession = await stripe.checkout.sessions.retrieve(
+        booking.stripeCheckoutSessionId,
+      );
+      if (existingSession.payment_status === 'paid') {
+        await this.markDepositPaid(booking.id, existingSession.id);
+        throw new ConflictException('Payment is already complete. Refresh your requests to see the booking.');
+      }
+      if (
+        existingSession.status === 'open' &&
+        existingSession.url &&
+        existingSession.expires_at * 1000 > now.getTime()
+      ) {
+        return { url: existingSession.url, sessionId: existingSession.id };
+      }
+      if (
+        existingSession.status === 'expired' ||
+        existingSession.expires_at * 1000 <= now.getTime()
+      ) {
+        await this.markDepositExpired(booking.id, quote.id, existingSession.id);
+        throw new ConflictException('The payment session expired. Request a new quote to continue.');
+      }
+      throw new ConflictException('The existing payment session is no longer available. Refresh your requests.');
+    }
 
     const depositCents = Math.round(Number(quote.amount) * 100);
     if (depositCents < 50) throw new BadRequestException('The amount is too small to charge.');
-    const returnBase =
-      this.config.get<string>('CHECKOUT_RETURN_URL') ?? 'http://localhost:8081';
+    const checkoutReturnUrl = this.config.get<string>('CHECKOUT_RETURN_URL');
+    const returnBase = checkoutReturnUrl
+      ? this.getRequiredUrl('CHECKOUT_RETURN_URL')
+      : this.config.get<string>('NODE_ENV') === 'production'
+        ? this.getRequiredUrl('CHECKOUT_RETURN_URL')
+        : 'http://localhost:8081';
     const configuration = await this.ensurePaymentConfiguration();
-    const feeCents = Math.round((depositCents * configuration.chefCommissionBps) / 10_000);
+    const payment = await this.money.prepareCheckout(
+      booking.id, depositCents, configuration.chefCommissionBps, configuration.customerMarketplaceFeeBps,
+    );
 
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
+      allowed_payment_method_types: ['card'],
       client_reference_id: booking.id,
+      expires_at: Math.floor(booking.paymentHoldExpiresAt.getTime() / 1000),
       line_items: [
         {
           quantity: 1,
           price_data: {
             currency: 'usd',
-            unit_amount: depositCents,
+            unit_amount: payment.grossCents,
             product_data: { name: 'AfroChop order payment' },
           },
         },
       ],
-      metadata: { bookingId: booking.id, quoteId: quote.id, platformFeeCents: String(feeCents) },
-      success_url: `${returnBase}/?payment=success`,
-      cancel_url: `${returnBase}/?payment=cancelled`,
-    });
+      metadata: { bookingId: booking.id, quoteId: quote.id, platformFeeCents: String(payment.platformFeeCents) },
+      payment_intent_data: { transfer_group: booking.id, metadata: { bookingId: booking.id } },
+      success_url: new URL('/?payment=success', returnBase).toString(),
+      cancel_url: new URL('/?payment=cancelled', returnBase).toString(),
+    }, { idempotencyKey: `afrochop-checkout-${payment.id}` });
     if (!session.url) throw new ServiceUnavailableException('Stripe did not return a checkout URL.');
 
-    await this.prisma.bookingRequest.update({
-      where: { id: booking.id },
-      data: { stripeCheckoutSessionId: session.id, depositAmount: depositCents / 100 },
+    const sessionSaved = await this.prisma.$transaction(async (tx) => {
+      await tx.bookingPayment.update({ where: { id: payment.id }, data: { updatedAt: new Date() } });
+      const saved = await tx.bookingRequest.updateMany({
+        where: {
+          id: booking.id,
+          status: 'awaiting_payment',
+          depositPaidAt: null,
+          OR: [{ stripeCheckoutSessionId: null }, { stripeCheckoutSessionId: session.id }],
+          paymentHoldExpiresAt: { gt: new Date() },
+        },
+        data: { stripeCheckoutSessionId: session.id, depositAmount: payment.grossCents / 100 },
+      });
+      if (saved.count === 1) {
+        await tx.bookingPayment.update({ where: { id: payment.id }, data: { stripeSessionId: session.id } });
+      }
+      return saved;
     });
+    if (sessionSaved.count !== 1) {
+      await stripe.checkout.sessions.expire(session.id);
+      throw new ConflictException('The booking payment hold expired. Request a new quote to continue.');
+    }
     return { url: session.url, sessionId: session.id };
   }
 
@@ -394,16 +468,45 @@ export class PaymentsService {
     const session = await this.requireStripe().checkout.sessions.retrieve(
       booking.stripeCheckoutSessionId,
     );
-    if (session.payment_status !== 'paid') return { paid: false, status: booking.status };
-    return this.markDepositPaid(booking.id);
+    if (session.payment_status !== 'paid') {
+      if (
+        session.status === 'expired' ||
+        (session.expires_at !== null && session.expires_at * 1000 <= Date.now())
+      ) {
+        await this.markDepositExpired(booking.id, quote.id, session.id);
+        return { paid: false, status: 'expired' };
+      }
+      return { paid: false, status: booking.status };
+    }
+    return this.markDepositPaid(booking.id, session.id);
   }
 
-  private async markDepositPaid(bookingId: string) {
-    await this.prisma.bookingRequest.updateMany({
-      where: { id: bookingId, status: 'awaiting_payment', depositPaidAt: null },
-      data: { status: 'confirmed', depositPaidAt: new Date() },
+  private async markDepositExpired(
+    bookingId: string,
+    quoteId: string,
+    sessionId: string,
+  ) {
+    await this.prisma.$transaction(async (transaction) => {
+      const expired = await transaction.bookingRequest.updateMany({
+        where: {
+          id: bookingId,
+          status: 'awaiting_payment',
+          stripeCheckoutSessionId: sessionId,
+          depositPaidAt: null,
+        },
+        data: { status: 'expired' },
+      });
+      if (expired.count > 0) {
+        await transaction.quote.updateMany({
+          where: { id: quoteId, bookingRequestId: bookingId, status: 'accepted' },
+          data: { status: 'expired' },
+        });
+      }
     });
-    return { paid: true, status: 'confirmed' };
+  }
+
+  private async markDepositPaid(bookingId: string, sessionId: string) {
+    return this.money.capture(sessionId);
   }
 
   private async createAccountLink(

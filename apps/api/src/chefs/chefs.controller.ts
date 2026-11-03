@@ -29,10 +29,18 @@ import {
 import { ChefMenuEntryDto, ChefMenuTemplateDto } from './dto/chef-menu.dto.js';
 import { ChefSearchDto } from './dto/chef-search.dto.js';
 import { ChefsService } from './chefs.service.js';
+import { ChefOnboardingDto } from './dto/chef-onboarding.dto.js';
 
 @Controller('chefs')
 export class ChefsController {
   constructor(private readonly chefsService: ChefsService) {}
+
+  @Post('me/onboarding')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.chef)
+  completeOnboarding(@Req() request: AuthenticatedRequest, @Body() dto: ChefOnboardingDto) {
+    return this.chefsService.completeOnboarding(request.user.sub, dto);
+  }
 
   @Get()
   search(@Query() query: ChefSearchDto) {

@@ -16,6 +16,8 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NODE_PATH=/app/apps/api/node_modules
 
+RUN apk add --no-cache ffmpeg
+
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/package-lock.json ./package-lock.json
 COPY --from=builder /app/apps/api/package.json ./apps/api/package.json

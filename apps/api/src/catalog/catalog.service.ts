@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { publicChefWhere } from '../chefs/public-chef.js';
 
 const countryCatalog = [
   { name: 'Algeria', code: 'DZ', region: 'North Africa', flag: '🇩🇿', cuisineDescription: 'Tagines, couscous, and vibrant Mediterranean flavors.' },
@@ -166,12 +167,24 @@ export class CatalogService {
     return marketCountries;
   }
 
+  getOnboardingFoods() {
+    return this.prisma.dish.findMany({
+      where: { isApproved: true },
+      orderBy: { name: 'asc' },
+      take: 500,
+      select: {
+        id: true, name: true,
+        dishCountries: { select: { country: { select: { id: true, name: true } } } },
+      },
+    });
+  }
+
   async getServiceAreaStates(countryCode?: string) {
     const areas = await this.prisma.chefServiceArea.findMany({
       where: {
         ...(countryCode ? { countryCode: countryCode.trim().toUpperCase() } : {}),
         state: { not: null },
-        chef: { isPublic: true, verificationStatus: 'approved' },
+        chef: publicChefWhere,
       },
       select: { state: true },
       orderBy: { state: 'asc' },
@@ -185,7 +198,7 @@ export class CatalogService {
         ...(countryCode ? { countryCode: countryCode.trim().toUpperCase() } : {}),
         ...(state ? { state: { equals: state.trim(), mode: 'insensitive' } } : {}),
         city: { not: null },
-        chef: { isPublic: true, verificationStatus: 'approved' },
+        chef: publicChefWhere,
       },
       select: { city: true },
       orderBy: { city: 'asc' },
@@ -218,6 +231,7 @@ export class CatalogService {
   async getChefHighlights() {
     try {
       const chefs = await this.prisma.chefProfile.findMany({
+        where: publicChefWhere,
         take: 3,
         orderBy: { averageRating: 'desc' },
       });

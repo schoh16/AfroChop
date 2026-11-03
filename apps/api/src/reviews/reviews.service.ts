@@ -15,6 +15,7 @@ import {
   ReviewReportStatus,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { publicChefWhere } from '../chefs/public-chef.js';
 import {
   ChefReviewResponseDto,
   CreateReviewDto,
@@ -36,7 +37,7 @@ export class ReviewsService {
 
   async listPublicReviews(chefId: string, query: ReviewListQueryDto) {
     const chef = await this.prisma.chefProfile.findFirst({
-      where: { id: chefId, isPublic: true, verificationStatus: 'approved' },
+      where: { id: chefId, ...publicChefWhere },
       select: { id: true },
     });
     if (!chef) throw new NotFoundException('Chef profile not found.');

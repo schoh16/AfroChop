@@ -22,6 +22,8 @@ describe('SafetyService verification workflow', () => {
     adminAuditLog: { create: vi.fn() },
   };
   const prisma = {
+    bookingRequest: { findUnique: vi.fn() },
+    verificationAuditLog: { create: vi.fn() },
     user: { findUnique: vi.fn() },
     userVerification: {
       findMany: vi.fn(),
@@ -129,6 +131,24 @@ describe('SafetyService verification workflow', () => {
       }),
     ).rejects.toThrow('Address verification is disabled');
     expect(prisma.customerServiceAddress.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('denies unpaid and nonparticipant access to private booking addresses', async () => {
+    prisma.bookingRequest.findUnique.mockResolvedValue({
+      customerId: 'customer-id', chef: { userId: 'chef-id' },
+      status: 'awaiting_payment', depositPaidAt: null, serviceAddress: { encryptedAddress: 'private' },
+    });
+    await expect(service.getBookingServiceAddress('chef-id', UserRole.chef, 'b1')).rejects.toThrow('private');
+    await expect(service.getBookingServiceAddress('other-customer', UserRole.customer, 'b1')).rejects.toThrow('private');
+    expect(prisma.verificationAuditLog.create).not.toHaveBeenCalled();
+  });
+
+  it('requires service-address jurisdictions to match the country', async () => {
+    await expect(service.createMyServiceAddress('customer-id', {
+      line1: '123 Main Street', city: 'Brooklyn', region: 'NY', postalCode: '11201',
+      countryCode: 'US', jurisdictionCode: 'CA-ON',
+    })).rejects.toThrow('country code');
+    expect(transaction.customerServiceAddress.create).not.toHaveBeenCalled();
   });
 
   it('records administrator verification decisions in the audit log', async () => {

@@ -29,4 +29,6 @@ Publish only payment/refund timing confirmed by the payment provider. Keep card 
 
 ## Completion checklist
 
+The current app charges the full quote and disclosed customer fee through Stripe Checkout. The cook signals delivery/service completion before the customer confirms receipt and the cook's share is transferred. A customer can request a full refund for admin review; requesting one does not guarantee approval. Open requests and disputes block unreleased transfers. Approved refunds reverse a prior cook transfer before refunding; failed recovery/refund operations require support intervention. Automatic cancellation windows, partial refunds, grocery-cost deductions and non-refundable charges are not implemented or approved. Counsel must establish lawful customer rights regardless of whether a request is submitted through the app.
+
 Counsel and payments operations must fill each placeholder, verify consistency with payment code, taxes and chargebacks, and test all customer/chef cancellation states before publication.

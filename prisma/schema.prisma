@@ -42,12 +42,14 @@ enum QuoteStatus {
   pending
   accepted
   declined
+  expired
 }
 
 enum BookingStatus {
   requested
   quoted
   awaiting_payment
+  expired
   confirmed
   in_progress
   completed
@@ -157,6 +159,7 @@ model User {
   email                            String    @unique
   passwordHash                     String
   role                             UserRole  @default(customer)
+  roleSelectedAt                   DateTime?
   isActive                         Boolean   @default(true)
   phoneNumberLegacy                String?
   phoneNumberEncrypted             String?
@@ -181,6 +184,7 @@ model User {
   reviewsGiven          Review[]                 @relation("CustomerReviews")
   reviewReports         ReviewReport[]
   verifications         UserVerification[]
+  verificationChallenges VerificationChallenge[]
   verificationDocuments VerificationDocument[]
   verificationAuditLogs VerificationAuditLog[]   @relation("VerificationAuditActor")
   verificationReviews   VerificationAuditLog[]   @relation("VerificationAuditSubject")
@@ -188,6 +192,22 @@ model User {
   serviceAddresses      CustomerServiceAddress[]
 
   @@map("users")
+}
+
+model ChefEmailCode {
+  email         String   @id
+  codeHash      String
+  name          String?
+  expiresAt     DateTime
+  attempts      Int      @default(0)
+  consumedAt    DateTime?
+  deliveredAt   DateTime?
+  lastSentAt    DateTime
+  windowStart   DateTime
+  sendCount     Int      @default(1)
+
+  @@index([expiresAt])
+  @@map("chef_email_codes")
 }
 
 model Country {
@@ -446,6 +466,7 @@ model BookingRequest {
   stripeCheckoutSessionId  String?             @unique
   depositAmount            Decimal?            @db.Decimal(10, 2)
   depositPaidAt            DateTime?
+  paymentHoldExpiresAt     DateTime?
   createdAt                DateTime            @default(now())
   updatedAt                DateTime            @updatedAt
 
@@ -456,10 +477,12 @@ model BookingRequest {
   safetyIncidents SafetyIncident[]
   review          Review?
   serviceAddress  CustomerServiceAddress? @relation(fields: [customerServiceAddressId], references: [id], onDelete: Restrict)
+  payment         BookingPayment?
 
   @@index([chefId, desiredDate, status])
   @@index([customerId, createdAt])
   @@index([customerServiceAddressId])
+  @@index([status, paymentHoldExpiresAt])
   @@map("booking_requests")
 }
 
@@ -554,6 +577,26 @@ model UserVerification {
   @@unique([userId, type])
   @@index([type, status, updatedAt])
   @@map("user_verifications")
+}
+
+model VerificationChallenge {
+  id              String               @id @default(uuid()) @db.Uuid
+  userId          String               @db.Uuid
+  type            UserVerificationType
+  targetHash      String
+  providerSid     String?
+  expiresAt       DateTime
+  lastSentAt      DateTime
+  windowStartedAt DateTime
+  sendCount       Int                  @default(1)
+  attempts        Int                  @default(0)
+  consumedAt      DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type])
+  @@index([expiresAt])
+  @@map("verification_challenges")
 }
 
 model CustomerServiceAddress {
@@ -793,6 +836,83 @@ model PaymentWebhookEvent {
   @@map("payment_webhook_events")
 }
 
+enum BookingPayoutStatus {
+  held
+  released
+  reversed
+}
+
+enum BookingRefundStatus {
+  requested
+  approved
+  rejected
+  succeeded
+}
+
+model BookingPayment {
+  id                    String              @id @default(uuid()) @db.Uuid
+  bookingId             String              @unique @db.Uuid
+  stripeSessionId       String?             @unique
+  stripePaymentIntentId String?             @unique
+  stripeChargeId        String?             @unique
+  stripeTransferId      String?             @unique
+  destinationAccountId  String
+  currency              String              @default("usd")
+  quoteCents            Int
+  customerFeeCents       Int
+  platformFeeCents       Int
+  grossCents            Int
+  chefCents             Int
+  refundedCents         Int                 @default(0)
+  disputeOpen           Boolean             @default(false)
+  paidAt                DateTime?
+  payoutStatus          BookingPayoutStatus @default(held)
+  releasedAt            DateTime?
+  lastReconciledAt      DateTime?
+  lastError             String?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  booking BookingRequest     @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  refund  BookingRefund?
+  entries PaymentLedgerEntry[]
+
+  @@index([payoutStatus, paidAt])
+  @@map("booking_payments")
+}
+
+model BookingRefund {
+  id             String              @id @default(uuid()) @db.Uuid
+  paymentId      String              @unique @db.Uuid
+  status         BookingRefundStatus @default(requested)
+  reason         String
+  reviewerId     String?             @db.Uuid
+  reviewerNotes  String?
+  stripeRefundId String?             @unique
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  payment BookingPayment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@index([status, createdAt])
+  @@map("booking_refunds")
+}
+
+model PaymentLedgerEntry {
+  id           String   @id @default(uuid()) @db.Uuid
+  paymentId    String   @db.Uuid
+  externalId   String   @unique
+  kind         String
+  amountCents  Int
+  currency     String
+  createdAt    DateTime @default(now())
+
+  payment BookingPayment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@index([paymentId, createdAt])
+  @@map("payment_ledger_entries")
+}
+
 model Review {
   id               String                 @id @default(uuid()) @db.Uuid
   bookingId        String                 @unique @db.Uuid
@@ -903,9 +1023,24 @@ model FarmerProfile {
   user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   produce   FarmProduce[]
   inquiries FarmInquiry[]
+  photos    FarmerPhoto[]
 
   @@index([state, city])
   @@map("farmer_profiles")
+}
+
+model FarmerPhoto {
+  id        String   @id @default(uuid()) @db.Uuid
+  farmerId  String   @db.Uuid
+  imageUrl  String
+  mediaType ChefMediaType @default(image)
+  caption   String?
+  createdAt DateTime @default(now())
+
+  farmer FarmerProfile @relation(fields: [farmerId], references: [id], onDelete: Cascade)
+
+  @@index([farmerId, createdAt])
+  @@map("farmer_photos")
 }
 
 model FarmProduce {

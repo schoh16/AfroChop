@@ -3,6 +3,7 @@ import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, Text
 import { AuthInput, PrimaryButton } from './AuthUi';
 import { avatarUrl } from '../lib/avatar';
 import { LocationDropdowns } from './LocationDropdowns';
+import { SellerGallery } from './SellerPhotos';
 import {
   ChatMessage,
   FarmInquiry,
@@ -274,6 +275,7 @@ function FarmerDetail({
         {[farmer.offersPickup && 'Pickup', farmer.offersDelivery && 'Delivery'].filter(Boolean).join(' & ') || 'Ask about pickup'}
       </Text>
       {farmer.bio ? <Text style={s.body}>{farmer.bio}</Text> : null}
+      <SellerGallery photos={farmer.photos ?? []} />
 
       <Text style={s.section}>Fresh produce</Text>
       {farmer.produce.length === 0 ? <Text style={s.sub}>Nothing listed right now.</Text> : null}

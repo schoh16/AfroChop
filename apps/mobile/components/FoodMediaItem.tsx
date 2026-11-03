@@ -1,5 +1,5 @@
-import { useVideoPlayer, VideoView } from 'expo-video';
 import { Image, StyleSheet, Text, View } from 'react-native';
+import { SellerVideoPlayer } from './SellerVideoPlayer';
 
 export function FoodMediaItem({
   uri,
@@ -10,20 +10,10 @@ export function FoodMediaItem({
   type?: 'image' | 'video';
   caption?: string | null;
 }) {
-  const player = useVideoPlayer(type === 'video' ? uri : null, (videoPlayer) => {
-    videoPlayer.loop = false;
-  });
-
   return (
     <View style={styles.container}>
       {type === 'video' ? (
-        <VideoView
-          accessibilityLabel={caption ?? 'Chef food video'}
-          contentFit="cover"
-          nativeControls
-          player={player}
-          style={styles.media}
-        />
+        <SellerVideoPlayer uri={uri} label={caption || 'Seller food video'} />
       ) : (
         <Image
           accessibilityLabel={caption ?? 'Chef food photo'}

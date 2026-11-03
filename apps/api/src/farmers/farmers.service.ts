@@ -25,6 +25,11 @@ const publicFarmerSelect = {
   offersPickup: true,
   offersDelivery: true,
   profileImageUrl: true,
+  photos: {
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+    select: { id: true, imageUrl: true, mediaType: true, caption: true },
+  },
   produce: {
     where: { isAvailable: true },
     orderBy: { name: 'asc' },
@@ -48,6 +53,7 @@ export class FarmersService {
     const q = query.q?.trim();
     const where: Prisma.FarmerProfileWhereInput = {
       isPublic: true,
+      user: { isActive: true },
       ...(query.city?.trim()
         ? { city: { contains: query.city.trim(), mode: 'insensitive' } }
         : {}),
@@ -74,7 +80,7 @@ export class FarmersService {
 
   async getPublicProfile(id: string) {
     const farmer = await this.prisma.farmerProfile.findFirst({
-      where: { id, isPublic: true },
+      where: { id, isPublic: true, user: { isActive: true } },
       select: publicFarmerSelect,
     });
     if (!farmer) throw new NotFoundException('Farmer not found.');
@@ -83,6 +89,7 @@ export class FarmersService {
 
   saveProfile(userId: string, dto: FarmerProfileDto) {
     const data = {
+      isPublic: true,
       farmName: dto.farmName.trim(),
       bio: dto.bio?.trim() || null,
       city: dto.city.trim(),
@@ -90,7 +97,7 @@ export class FarmersService {
       countryCode: dto.countryCode?.trim().toUpperCase() || null,
       offersPickup: dto.offersPickup ?? true,
       offersDelivery: dto.offersDelivery ?? false,
-      profileImageUrl: dto.profileImageUrl ?? null,
+      ...(dto.profileImageUrl !== undefined ? { profileImageUrl: dto.profileImageUrl } : {}),
     };
     return this.prisma.farmerProfile.upsert({
       where: { userId },
@@ -102,7 +109,7 @@ export class FarmersService {
   async getMyProfile(userId: string) {
     const farmer = await this.prisma.farmerProfile.findUnique({
       where: { userId },
-      include: { produce: { orderBy: { createdAt: 'desc' } } },
+      include: { produce: { orderBy: { createdAt: 'desc' } }, photos: { orderBy: { createdAt: 'desc' } } },
     });
     if (!farmer) throw new NotFoundException('Create your farm profile first.');
     return farmer;

@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { BookingStatus, ServiceType, UserRole } from '@prisma/client';
+import { BookingStatus, Prisma, QuoteStatus, ServiceType, UserRole } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { QuotesService } from './quotes.service.js';
@@ -12,6 +12,7 @@ describe('QuotesService food-safety gates', () => {
     bookingRequest: {
       create: vi.fn(),
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
       findUniqueOrThrow: vi.fn(),
@@ -30,6 +31,10 @@ describe('QuotesService food-safety gates', () => {
     stripeConnectedAccount: { findUnique: vi.fn() },
     quote: {
       create: vi.fn(),
+      findUnique: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
     },
     $transaction: vi.fn(),
   };
@@ -61,6 +66,107 @@ describe('QuotesService food-safety gates', () => {
       }),
     ).rejects.toThrow('acknowledge the current food allergy notice');
     expect(prisma.chefProfile.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('accepts a quote atomically and holds the requested slot for 24 hours', async () => {
+    prisma.quote.findUnique.mockResolvedValue({
+      id: 'quote-id',
+      status: QuoteStatus.pending,
+      bookingRequestId: 'booking-id',
+      bookingRequest: { customerId: 'customer-id', status: BookingStatus.quoted },
+    });
+
+    const tx = {
+      bookingRequest: {
+        updateMany: vi.fn()
+          .mockResolvedValueOnce({ count: 0 })
+          .mockResolvedValueOnce({ count: 1 }),
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
+      quote: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'quote-id',
+          status: QuoteStatus.pending,
+          bookingRequestId: 'booking-id',
+          bookingRequest: {
+            id: 'booking-id',
+            customerId: 'customer-id',
+            chefId: 'chef-profile-id',
+            status: BookingStatus.quoted,
+            desiredDate: new Date('2030-01-01T10:00:00.000Z'),
+            serviceEndAt: new Date('2030-01-01T12:00:00.000Z'),
+          },
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        update: vi.fn().mockResolvedValue({ id: 'quote-id', status: QuoteStatus.accepted }),
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: 'quote-id',
+          status: QuoteStatus.accepted,
+        }),
+      },
+    };
+    prisma.$transaction.mockImplementation(
+      (callback: (transaction: typeof tx) => unknown) => callback(tx),
+    );
+
+    const result = await service.respondToQuote('customer-id', 'quote-id', true);
+
+    expect(result.status).toBe(QuoteStatus.accepted);
+    expect(tx.bookingRequest.updateMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: BookingStatus.awaiting_payment,
+          paymentHoldExpiresAt: expect.any(Date),
+        }),
+      }),
+    );
+    const holdExpiry = tx.bookingRequest.updateMany.mock.calls[1][0].data.paymentHoldExpiresAt;
+    expect(holdExpiry.getTime() - Date.now()).toBeGreaterThan(23 * 60 * 60 * 1000);
+    expect(prisma.$transaction).toHaveBeenCalledWith(
+      expect.any(Function),
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+  });
+
+  it('rejects quote acceptance when another non-expired booking overlaps the slot', async () => {
+    prisma.quote.findUnique.mockResolvedValue({
+      id: 'quote-id',
+      status: QuoteStatus.pending,
+      bookingRequestId: 'booking-id',
+      bookingRequest: { customerId: 'customer-id', status: BookingStatus.quoted },
+    });
+
+    const tx = {
+      bookingRequest: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        findFirst: vi.fn().mockResolvedValue({ id: 'conflicting-booking' }),
+      },
+      quote: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'quote-id',
+          status: QuoteStatus.pending,
+          bookingRequestId: 'booking-id',
+          bookingRequest: {
+            id: 'booking-id',
+            customerId: 'customer-id',
+            chefId: 'chef-profile-id',
+            status: BookingStatus.quoted,
+            desiredDate: new Date('2030-01-01T10:00:00.000Z'),
+            serviceEndAt: new Date('2030-01-01T12:00:00.000Z'),
+          },
+        }),
+        updateMany: vi.fn(),
+        update: vi.fn(),
+        findUniqueOrThrow: vi.fn(),
+      },
+    };
+    prisma.$transaction.mockImplementation(
+      (callback: (transaction: typeof tx) => unknown) => callback(tx),
+    );
+
+    await expect(service.respondToQuote('customer-id', 'quote-id', true))
+      .rejects.toThrow('already has a booking during that time');
+    expect(tx.quote.updateMany).not.toHaveBeenCalled();
   });
 
   it('fails closed until an applicable jurisdiction service rule is configured', async () => {
@@ -270,7 +376,7 @@ describe('QuotesService food-safety gates', () => {
   });
 
   it('requires customer and assigned-chef completion confirmations before review eligibility', async () => {
-    const customerConfirmationTime = new Date();
+    const chefConfirmationTime = new Date();
     prisma.bookingRequest.findUnique
       .mockResolvedValueOnce({
         id: 'booking-id',
@@ -286,14 +392,14 @@ describe('QuotesService food-safety gates', () => {
         customerId: 'customer-id',
         chefId: 'chef-profile-id',
         status: BookingStatus.in_progress,
-        chefCompletedAt: null,
-        customerCompletedAt: customerConfirmationTime,
+        chefCompletedAt: chefConfirmationTime,
+        customerCompletedAt: null,
         chef: { userId: 'chef-user-id' },
       });
     const transaction = {
       bookingRequest: {
         update: vi.fn(),
-        updateMany: vi.fn(),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findUniqueOrThrow: vi
           .fn()
           .mockResolvedValueOnce({ id: 'booking-id', status: BookingStatus.in_progress })
@@ -304,19 +410,19 @@ describe('QuotesService food-safety gates', () => {
       (callback: (tx: typeof transaction) => unknown) => callback(transaction),
     );
 
-    const customerResult = await service.confirmCompletion(
-      'customer-id',
-      UserRole.customer,
-      'booking-id',
-    );
     const chefResult = await service.confirmCompletion(
       'chef-user-id',
       UserRole.chef,
       'booking-id',
     );
+    const customerResult = await service.confirmCompletion(
+      'customer-id',
+      UserRole.customer,
+      'booking-id',
+    );
 
-    expect(customerResult.status).toBe(BookingStatus.in_progress);
-    expect(chefResult.status).toBe(BookingStatus.completed);
+    expect(chefResult.status).toBe(BookingStatus.in_progress);
+    expect(customerResult.status).toBe(BookingStatus.completed);
     expect(transaction.bookingRequest.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -342,6 +448,16 @@ describe('QuotesService food-safety gates', () => {
     await expect(
       service.confirmCompletion('other-user', UserRole.customer, 'booking-id'),
     ).rejects.toThrow('cannot confirm another user’s booking');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('requires the cook to mark delivery complete before the customer confirms receipt', async () => {
+    prisma.bookingRequest.findUnique.mockResolvedValue({
+      id: 'booking-id', customerId: 'customer-id', status: BookingStatus.confirmed,
+      chefCompletedAt: null, customerCompletedAt: null, chef: { userId: 'chef-user-id' },
+    });
+    await expect(service.confirmCompletion('customer-id', UserRole.customer, 'booking-id'))
+      .rejects.toThrow('Wait for the cook');
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });

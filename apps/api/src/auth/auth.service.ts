@@ -1,5 +1,7 @@
 import {
   BadRequestException,
+  ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -11,6 +13,8 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { LoginDto } from './dto/login.dto.js';
 import * as bcrypt from 'bcryptjs';
+import { Prisma, UserRole } from '@prisma/client';
+import type { RegisterRole } from './dto/register.dto.js';
 
 @Injectable()
 export class AuthService {
@@ -42,7 +46,7 @@ export class AuthService {
         name: dto.name,
         email: dto.email.toLowerCase(),
         passwordHash,
-        role: dto.role,
+        role: UserRole.customer,
         smsOrderUpdates: dto.smsOrderUpdates ?? false,
         smsOrderUpdatesUpdatedAt: dto.smsOrderUpdates ? new Date() : null,
         marketingContactSharing: false,
@@ -62,6 +66,7 @@ export class AuthService {
       name: user.name,
       email: user.email,
       role: user.role,
+      requiresRoleSelection: true,
       smsOrderUpdates: user.smsOrderUpdates,
       marketingContactSharing: user.marketingContactSharing,
       marketingCountryCode: user.marketingCountryCode,
@@ -92,11 +97,94 @@ export class AuthService {
       name: user.name,
       email: user.email,
       role: user.role,
+      requiresRoleSelection: user.role !== UserRole.admin && !user.roleSelectedAt,
       smsOrderUpdates: user.smsOrderUpdates,
       marketingContactSharing: user.marketingContactSharing,
       marketingCountryCode: user.marketingCountryCode ?? user.chefProfile?.countryCode ?? null,
       token: this.jwtService.sign({ sub: user.id, email: user.email, role: user.role }),
     };
+  }
+
+  async me(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, name: true, email: true, role: true, isActive: true, roleSelectedAt: true },
+    });
+    if (!user?.isActive) throw new UnauthorizedException('This account is inactive.');
+    return {
+      id: user.id, name: user.name, email: user.email, role: user.role,
+      requiresRoleSelection: user.role !== UserRole.admin && !user.roleSelectedAt,
+    };
+  }
+
+  async selectRole(userId: string, role: RegisterRole) {
+    try {
+      const user = await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId}::uuid FOR UPDATE`;
+        const account = await tx.user.findUnique({ where: { id: userId } });
+        if (!account?.isActive) throw new UnauthorizedException('This account is inactive.');
+        if (account.role === UserRole.admin) throw new ForbiddenException('Administrator accounts cannot select marketplace roles.');
+        if (account.roleSelectedAt) {
+          if (account.role !== role) throw new ConflictException('Your account role has already been selected. Contact support to change it.');
+          return account;
+        }
+        if (account.role !== role) {
+          const participant: Prisma.BookingRequestWhereInput = {
+            OR: [{ customerId: userId }, { chef: { userId } }, {
+              quotes: { some: { chef: { userId }, status: { in: ['pending', 'accepted'] } } },
+            }],
+          };
+          const [booking, inquiry, money] = await Promise.all([
+            tx.bookingRequest.findFirst({
+              where: { AND: [participant, { status: { in: ['requested', 'quoted', 'awaiting_payment', 'confirmed', 'in_progress', 'disputed'] } }] },
+              select: { id: true },
+            }),
+            tx.farmInquiry.findFirst({
+              where: { OR: [{ customerId: userId }, { farmer: { userId } }], status: { in: ['requested', 'quoted'] } },
+              select: { id: true },
+            }),
+            tx.bookingPayment.findFirst({
+              where: {
+                booking: participant,
+                OR: [
+                  { disputeOpen: true }, { lastError: { not: null } },
+                  { refund: { status: { in: ['requested', 'approved'] } } },
+                  { paidAt: { not: null }, payoutStatus: 'held', refundedCents: { lt: tx.bookingPayment.fields.grossCents } },
+                ],
+              },
+              select: { id: true },
+            }),
+          ]);
+          if (booking || inquiry || money) {
+            throw new ConflictException('Finish active bookings, farm inquiries, and unresolved payments before changing roles. You can confirm your current role to continue.');
+          }
+          await tx.chefProfile.updateMany({ where: { userId }, data: { isPublic: false } });
+          await tx.farmerProfile.updateMany({ where: { userId }, data: { isPublic: false } });
+        }
+        if (role === UserRole.chef) {
+          await tx.chefProfile.upsert({
+            where: { userId },
+            create: { userId, displayName: account.name, languages: [], isPublic: false },
+            update: {},
+          });
+        } else if (role === UserRole.farmer) {
+          await tx.farmerProfile.upsert({
+            where: { userId }, create: { userId, farmName: account.name, isPublic: false }, update: {},
+          });
+        }
+        return tx.user.update({ where: { id: userId }, data: { role, roleSelectedAt: new Date() } });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      return {
+        id: user.id, name: user.name, email: user.email, role: user.role,
+        requiresRoleSelection: false,
+        token: this.jwtService.sign({ sub: user.id, email: user.email, role: user.role }),
+      };
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+        throw new ConflictException('Your account was updated by another request. Please try selecting your role again.');
+      }
+      throw error;
+    }
   }
 
   async updateNotificationPreferences(userId: string, smsOrderUpdates: boolean) {

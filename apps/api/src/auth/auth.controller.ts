@@ -10,6 +10,8 @@ import { Roles } from './roles.decorator.js';
 import { RolesGuard } from './roles.guard.js';
 import { UserRole } from '@prisma/client';
 import { MarketingContactService } from './marketing-contact.service.js';
+import { AllowRoleSelection } from './role-selection.decorator.js';
+import { SelectRoleDto } from './dto/select-role.dto.js';
 
 class NotificationPreferenceDto {
   @IsBoolean()
@@ -45,6 +47,20 @@ export class AuthController {
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
+  }
+
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  @AllowRoleSelection()
+  me(@Req() request: AuthenticatedRequest) {
+    return this.authService.me(request.user.sub);
+  }
+
+  @Post('me/role')
+  @UseGuards(JwtAuthGuard)
+  @AllowRoleSelection()
+  selectRole(@Req() request: AuthenticatedRequest, @Body() dto: SelectRoleDto) {
+    return this.authService.selectRole(request.user.sub, dto.role);
   }
 
   @Patch('me/notification-preferences')

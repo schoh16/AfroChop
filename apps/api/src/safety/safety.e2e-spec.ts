@@ -13,6 +13,7 @@ import { App } from 'supertest/types.js';
 import { JwtAuthGuard, type AuthenticatedRequest } from '../auth/jwt-auth.guard.js';
 import { SafetyController } from './safety.controller.js';
 import { SafetyService } from './safety.service.js';
+import { VerificationCodeService } from './verification-code.service.js';
 
 vi.mock('@nestjs/jwt', () => ({ JwtService: class TestJwtService {} }));
 
@@ -39,6 +40,8 @@ class TestBearerGuard implements CanActivate {
 describe('Safety verification API (e2e)', () => {
   let app: INestApplication<App>;
   const safetyService = {
+    getAdminServiceAddress: vi.fn(),
+    getBookingServiceAddress: vi.fn(),
     getMyVerification: vi.fn(),
     updateMyPhoneNumber: vi.fn(),
     createMyServiceAddress: vi.fn(),
@@ -57,12 +60,16 @@ describe('Safety verification API (e2e)', () => {
     reviewPermit: vi.fn(),
     updateChefStatus: vi.fn(),
   };
+  const codes = { send: vi.fn(), check: vi.fn() };
 
   beforeEach(async () => {
     vi.clearAllMocks();
     const module = await Test.createTestingModule({
       controllers: [SafetyController],
-      providers: [{ provide: SafetyService, useValue: safetyService }],
+      providers: [
+        { provide: SafetyService, useValue: safetyService },
+        { provide: VerificationCodeService, useValue: codes },
+      ],
     })
       .overrideGuard(JwtAuthGuard)
       .useClass(TestBearerGuard)
@@ -91,6 +98,19 @@ describe('Safety verification API (e2e)', () => {
       .set('Authorization', 'Bearer admin-token')
       .expect(200);
     expect(safetyService.getVerificationQueue).toHaveBeenCalledTimes(1);
+  });
+
+  it('authenticates verification codes and validates code format', async () => {
+    await request(app.getHttpServer()).post('/api/verification/me/email/send-code').expect(401);
+    codes.send.mockResolvedValue({ sent: true });
+    await request(app.getHttpServer()).post('/api/verification/me/email/send-code')
+      .set('Authorization', 'Bearer customer-token').expect(201);
+    expect(codes.send).toHaveBeenCalledWith('customer-id', 'email');
+    await request(app.getHttpServer()).post('/api/verification/me/email/check-code')
+      .set('Authorization', 'Bearer customer-token').send({ code: 'not-a-code' }).expect(400);
+    codes.check.mockResolvedValue({ verified: true, type: 'email' });
+    await request(app.getHttpServer()).post('/api/verification/me/email/check-code')
+      .set('Authorization', 'Bearer customer-token').send({ code: '123456' }).expect(201);
   });
 
   it('allows customers to read their own verification state but not administer another user', async () => {

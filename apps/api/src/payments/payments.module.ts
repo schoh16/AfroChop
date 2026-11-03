@@ -4,6 +4,8 @@ import Stripe from 'stripe';
 import { AuthModule } from '../auth/auth.module.js';
 import { PaymentsController } from './payments.controller.js';
 import { PaymentsService, STRIPE_CLIENT } from './payments.service.js';
+import { BookingMoneyService } from './booking-money.service.js';
+import { BookingMoneyWorker } from './booking-money.worker.js';
 
 @Module({
   imports: [AuthModule],
@@ -14,11 +16,13 @@ import { PaymentsService, STRIPE_CLIENT } from './payments.service.js';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
         const secretKey = config.get<string>('STRIPE_SECRET_KEY');
-        return secretKey ? new Stripe(secretKey) : null;
+        return secretKey ? new Stripe(secretKey, { timeout: 15_000, maxNetworkRetries: 1 }) : null;
       },
     },
     PaymentsService,
+    BookingMoneyService,
+    BookingMoneyWorker,
   ],
-  exports: [PaymentsService],
+  exports: [PaymentsService, BookingMoneyService],
 })
 export class PaymentsModule {}

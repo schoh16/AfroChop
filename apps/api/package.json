@@ -26,6 +26,7 @@
     "prisma:studio": "prisma studio --schema ../../prisma/schema.prisma"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.0.0",
     "@afrochef/shared-types": "*",
     "@afrochef/validation": "*",
     "@nestjs/common": "^11.2.7",
@@ -43,6 +44,7 @@
     "prisma": "^6.1.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "sharp": "^0.34.0",
     "stripe": "^23.0.0",
     "twilio": "^6.1.2",
     "zod": "^3.24.0"

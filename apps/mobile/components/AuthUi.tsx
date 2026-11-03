@@ -180,7 +180,8 @@ export function RoleSelectionCard({
   return (
     <Pressable
       accessibilityRole="radio"
-      accessibilityState={{ selected }}
+      aria-checked={selected ?? false}
+      accessibilityState={{ selected, checked: selected ?? false }}
       onPress={onPress}
       style={({ pressed }) => [
         styles.roleCard,

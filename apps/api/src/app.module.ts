@@ -15,6 +15,7 @@ import { PaymentsModule } from './payments/payments.module.js';
 import { QuotesModule } from './quotes/quotes.module.js';
 import { ReviewsModule } from './reviews/reviews.module.js';
 import { SafetyModule } from './safety/safety.module.js';
+import { MediaModule } from './media/media.module.js';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { SafetyModule } from './safety/safety.module.js';
     QuotesModule,
     ReviewsModule,
     SafetyModule,
+    MediaModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

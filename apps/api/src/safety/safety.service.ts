@@ -20,6 +20,7 @@ import {
   UserRole,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { decryptVerificationValue } from './verification-crypto.js';
 import {
   ChefStatusReviewDto,
   ChefCredentialDto,
@@ -42,6 +43,49 @@ export class SafetyService {
     private readonly config: ConfigService,
   ) {}
 
+  private readAddress(encryptedAddress: string) {
+    const value: unknown = JSON.parse(decryptVerificationValue(encryptedAddress, this.config.get<string>('VERIFICATION_ENCRYPTION_KEY')));
+    if (!value || typeof value !== 'object' ||
+        !('line1' in value) || typeof value.line1 !== 'string' ||
+        !('city' in value) || typeof value.city !== 'string' ||
+        !('region' in value) || typeof value.region !== 'string' ||
+        !('postalCode' in value) || typeof value.postalCode !== 'string' ||
+        !('countryCode' in value) || typeof value.countryCode !== 'string') {
+      throw new ServiceUnavailableException('Stored service address cannot be read. Contact support.');
+    }
+    return {
+      line1: value.line1, line2: 'line2' in value && typeof value.line2 === 'string' ? value.line2 : null,
+      city: value.city, region: value.region, postalCode: value.postalCode, countryCode: value.countryCode,
+    };
+  }
+
+  async getAdminServiceAddress(adminId: string, addressId: string) {
+    const address = await this.prisma.customerServiceAddress.findUnique({ where: { id: addressId } });
+    if (!address) throw new NotFoundException('Service address not found.');
+    await this.prisma.verificationAuditLog.create({
+      data: { actorId: adminId, subjectId: address.userId, action: 'service_address_review_accessed',
+        targetType: 'customer_service_address', targetId: addressId },
+    });
+    return this.readAddress(address.encryptedAddress);
+  }
+
+  async getBookingServiceAddress(userId: string, role: UserRole, bookingId: string) {
+    const booking = await this.prisma.bookingRequest.findUnique({
+      where: { id: bookingId }, include: { chef: { select: { userId: true } }, serviceAddress: true },
+    });
+    if (!booking) throw new NotFoundException('Booking not found.');
+    const customer = role === 'customer' && booking.customerId === userId;
+    const chef = role === 'chef' && booking.chef?.userId === userId && Boolean(booking.depositPaidAt) &&
+      ['confirmed', 'in_progress'].includes(booking.status);
+    if (!customer && !chef) throw new ForbiddenException('Service addresses are private and only available to the assigned cook during a paid active booking.');
+    if (!booking.serviceAddress) throw new NotFoundException('This booking has no service address.');
+    await this.prisma.verificationAuditLog.create({
+      data: { actorId: userId, subjectId: booking.customerId, action: 'booking_service_address_accessed',
+        targetType: 'booking_request', targetId: bookingId },
+    });
+    return this.readAddress(booking.serviceAddress.encryptedAddress);
+  }
+
   async getMyVerification(userId: string, role: UserRole) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -59,18 +103,23 @@ export class SafetyService {
             status: true,
             validatedAt: true,
             expiresAt: true,
+            encryptedAddress: true,
           },
           orderBy: { createdAt: 'desc' },
         },
       },
     });
     if (!user) throw new NotFoundException('User not found.');
+    const serviceAddresses = user.serviceAddresses.map(({ encryptedAddress, ...address }) => {
+      const value = this.readAddress(encryptedAddress);
+      return { ...address, displayLabel: `${value.line1}, ${value.city}` };
+    });
     if (role !== UserRole.chef) {
       return {
         email: user.email,
         phoneNumberLast4: user.phoneNumberLast4,
         verifications: user.verifications,
-        serviceAddresses: user.serviceAddresses,
+        serviceAddresses,
       };
     }
 
@@ -141,7 +190,7 @@ export class SafetyService {
       email: user.email,
       phoneNumberLast4: user.phoneNumberLast4,
       verifications: user.verifications,
-      serviceAddresses: user.serviceAddresses,
+      serviceAddresses,
       chef: {
         id: chef.id,
         approvalStatus: chef.verificationStatus,
@@ -207,6 +256,9 @@ export class SafetyService {
     const encryptionKey = this.verificationEncryptionKey();
     const countryCode = dto.countryCode.toUpperCase();
     const jurisdictionCode = dto.jurisdictionCode.trim().toUpperCase();
+    if (!jurisdictionCode.startsWith(`${countryCode}-`)) {
+      throw new BadRequestException('The service jurisdiction must start with its country code, for example US-MD.');
+    }
     const addressValue = JSON.stringify({
       line1: dto.line1.trim(),
       line2: dto.line2?.trim() ?? null,

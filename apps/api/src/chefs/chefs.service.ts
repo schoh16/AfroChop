@@ -16,12 +16,61 @@ import {
   FoodPhotoDto,
 } from './dto/chef-profile.dto.js';
 import { ChefMenuEntryDto, ChefMenuTemplateDto } from './dto/chef-menu.dto.js';
+import { ChefOnboardingDto } from './dto/chef-onboarding.dto.js';
+import { publicChefWhere } from './public-chef.js';
 
 @Injectable()
 export class ChefsService {
   constructor(
     private readonly prisma: PrismaService,
   ) {}
+
+  async completeOnboarding(userId: string, dto: ChefOnboardingDto) {
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+      if (!user.isActive || user.role !== 'chef') {
+        throw new BadRequestException('An active chef account is required.');
+      }
+      const foods = [];
+      for (const food of dto.foods) {
+        if (!food.name.trim()) throw new BadRequestException('Enter a food name.');
+        if (food.dishId) {
+          const dish = await tx.dish.findFirst({
+            where: { id: food.dishId, isApproved: true },
+            include: { dishCountries: { select: { countryId: true } } },
+          });
+          if (!dish) throw new BadRequestException('Choose an available food.');
+          for (const origin of dish.dishCountries.length ? dish.dishCountries : [{ countryId: null }]) {
+            foods.push({ name: dish.name, cuisineCountryId: origin.countryId });
+          }
+        } else {
+          if (food.cuisineCountryId && !await tx.country.findUnique({ where: { id: food.cuisineCountryId } })) {
+            throw new BadRequestException('Choose a supported cuisine country.');
+          }
+          foods.push({ name: food.name.trim(), cuisineCountryId: food.cuisineCountryId ?? null });
+        }
+      }
+      const chef = await tx.chefProfile.upsert({
+        where: { userId },
+        create: { userId, displayName: user.name, languages: [], isPublic: true },
+        update: { isPublic: true },
+      });
+      // Serialize retries so a resumed signup cannot duplicate menu entries.
+      await tx.$queryRaw`SELECT id FROM chef_profiles WHERE id = ${chef.id}::uuid FOR UPDATE`;
+      const existing = await tx.chefMenuEntry.findMany({ where: { chefId: chef.id } });
+      const keys = new Set(existing.map((food) => `${food.name.toLowerCase()}:${food.cuisineCountryId}`));
+      const additions = foods.filter((food) => {
+        const key = `${food.name.toLowerCase()}:${food.cuisineCountryId}`;
+        if (keys.has(key)) return false;
+        keys.add(key);
+        return true;
+      });
+      if (additions.length) {
+        await tx.chefMenuEntry.createMany({ data: additions.map((food) => ({ ...food, chefId: chef.id })) });
+      }
+      return { id: chef.id, displayName: chef.displayName };
+    });
+  }
 
   async saveProfile(userId: string, dto: ChefProfileDto) {
     const existingProfile = await this.prisma.chefProfile.findUnique({
@@ -61,6 +110,7 @@ export class ChefsService {
       },
       update: {
         displayName: dto.displayName,
+        isPublic: true,
         bio: dto.bio,
         city: dto.city,
         state: dto.state,
@@ -477,8 +527,7 @@ export class ChefsService {
     }
 
     const where: Prisma.ChefProfileWhereInput = {
-      isPublic: true,
-      verificationStatus: 'approved',
+      ...publicChefWhere,
       ...(permitConstraints.length || discoveryConstraints.length
         ? { AND: [...permitConstraints, ...discoveryConstraints] }
         : {}),
@@ -592,7 +641,7 @@ export class ChefsService {
 
   async getPublicProfile(id: string) {
     const chef = await this.prisma.chefProfile.findFirst({
-      where: { id, isPublic: true, verificationStatus: 'approved' },
+      where: { id, ...publicChefWhere },
       select: {
         id: true,
         userId: true,

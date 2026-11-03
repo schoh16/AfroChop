@@ -5,6 +5,11 @@ import { CatalogService } from './catalog.service.js';
 export class CatalogController {
   constructor(private readonly catalogService: CatalogService) {}
 
+  @Get('foods')
+  getOnboardingFoods() {
+    return this.catalogService.getOnboardingFoods();
+  }
+
   @Get('countries')
   getCountries() {
     return this.catalogService.getCountries();

@@ -225,6 +225,12 @@ export class PhoneNumberDto {
   phoneNumber: string;
 }
 
+export class VerificationCodeDto {
+  @IsString()
+  @Matches(/^\d{4,10}$/)
+  code: string;
+}
+
 export class CustomerServiceAddressDto {
   @IsString()
   @MinLength(3)

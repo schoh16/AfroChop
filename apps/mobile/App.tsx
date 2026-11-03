@@ -1,60 +1,49 @@
-import { StatusBar } from 'expo-status-bar';
-import * as Linking from 'expo-linking';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Linking from 'expo-linking';
+import { StatusBar } from 'expo-status-bar';
+import { useEffect,useState } from 'react';
 import {
-  ActivityIndicator,
-  Image,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
+ActivityIndicator,
+Image,
+Pressable,
+ScrollView,
+StyleSheet,
+Text,
+TextInput,
+View,
 } from 'react-native';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-import { useEffect, useState } from 'react';
+import { SafeAreaProvider,SafeAreaView } from 'react-native-safe-area-context';
+import { AccountVerification } from './components/AccountVerification';
 import {
-  AfroChopLogo,
-  AuthInput,
-  AuthScreenLayout,
-  FeaturedFoodRail,
-  PasswordInput,
-  PrimaryButton,
-  RoleSelectionCard,
-  WelcomeFoodImage,
+AfroChopLogo,
+AuthScreenLayout,
+FeaturedFoodRail,
+PrimaryButton
 } from './components/AuthUi';
-import {
-  RatingSummary,
-  ReviewCard,
-  type ChefReviewList,
-  type ReviewSort,
-} from './components/Reviews';
+import { CalendarPicker,parseDateKey } from './components/CalendarPicker';
 import { ChefWorkspace } from './components/ChefWorkspace';
-import { FarmerAuth, FarmerWorkspace } from './components/FarmerWorkspace';
-import { FarmersMarketplace } from './components/FarmersMarketplace';
-import { Messaging, type MessagePartner } from './components/Messaging';
 import { CustomerRequests } from './components/CustomerRequests';
+import { FarmerWorkspace } from './components/FarmerWorkspace';
+import { FarmersMarketplace } from './components/FarmersMarketplace';
+import { FoodMediaItem } from './components/FoodMediaItem';
+import { LocationDropdowns } from './components/LocationDropdowns';
+import { Messaging,type MessagePartner } from './components/Messaging';
+import {
+RatingSummary,
+ReviewCard,
+type ChefReviewList,
+type ReviewSort,
+} from './components/Reviews';
+import { SharedAccountFlow,type AccountSession } from './components/SharedAccountFlow';
 import { authTokenStorage } from './lib/authTokenStorage';
 import { avatarUrl } from './lib/avatar';
-import { CalendarPicker, parseDateKey } from './components/CalendarPicker';
-import { LocationDropdowns } from './components/LocationDropdowns';
-import { FoodMediaItem } from './components/FoodMediaItem';
 import { marketingContactRequiresOptIn } from './lib/marketingRegions';
+import { marketplaceApi } from './lib/marketplaceApi';
 
 const featuredCountryCodes = ['NG', 'GH', 'CM', 'MA', 'ET', 'SN', 'KE', 'ZA'];
 const apiBaseUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000/api';
 const allergyNoticeVersion = '2026-10-08-v1';
 const guideCompletionKey = '@afrochop/guide-completed-v1';
-
-function getAuthErrorMessage(error: unknown, fallback: string) {
-  if (
-    error instanceof TypeError &&
-    /failed to fetch|network request failed|fetch failed/i.test(error.message)
-  ) {
-    return 'Could not connect to AfroChop. Check your connection and try again.';
-  }
-  return error instanceof Error ? error.message : fallback;
-}
 
 const majorAllergens = [
   'milk',
@@ -96,6 +85,7 @@ type ChefSummary = {
   bio: string | null;
   city: string | null;
   state: string | null;
+  countryCode?: string | null;
   specialties: string[];
   serviceTypes: string[];
   profileImageUrl: string | null;
@@ -148,10 +138,6 @@ function sortCuisineCountries(items: Country[]) {
   });
 }
 
-function isValidPhone(value: string) {
-  return /^\+[1-9]\d{7,14}$/.test(value.replace(/[\s()-]/g, ''));
-}
-
 async function openChefSocialProfile(platform: string, link: string) {
   const allowedHosts: Record<string, string[]> = {
     Instagram: ['instagram.com', 'www.instagram.com'],
@@ -184,63 +170,31 @@ export default function App() {
   const [dietaryNotes, setDietaryNotes] = useState('');
   const [bookingNotice, setBookingNotice] = useState<string | null>(null);
   const [quoteDate, setQuoteDate] = useState('');
+  const [quoteStartTime, setQuoteStartTime] = useState('');
   const [quoteDuration, setQuoteDuration] = useState('120');
   const [quoteServiceType, setQuoteServiceType] = useState('prepared_meals');
-  const [quoteJurisdiction, setQuoteJurisdiction] = useState('MD');
+  const [quoteJurisdiction, setQuoteJurisdiction] = useState('');
+  const [quoteServiceAddressId, setQuoteServiceAddressId] = useState('');
   const [quoteNotes, setQuoteNotes] = useState('');
   const [isSubmittingQuote, setIsSubmittingQuote] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
-  const [showChefSignup, setShowChefSignup] = useState(false);
-  const [signupName, setSignupName] = useState('');
-  const [signupEmail, setSignupEmail] = useState('');
-  const [signupPassword, setSignupPassword] = useState('');
-  const [chefName, setChefName] = useState('');
-  const [chefCity, setChefCity] = useState('');
-  const [chefState, setChefState] = useState('');
-  const [chefCountryCode, setChefCountryCode] = useState('US');
-  const [chefCuisine, setChefCuisine] = useState('Nigeria');
-  const [isSigningUp, setIsSigningUp] = useState(false);
-  const [signupMessage, setSignupMessage] = useState<string | null>(null);
-  const [signupLocked, setSignupLocked] = useState(false);
   const [chefSessionToken, setChefSessionToken] = useState<string | null>(null);
   const [farmerSessionToken, setFarmerSessionToken] = useState<string | null>(null);
-  const [showFarmerAuth, setShowFarmerAuth] = useState(false);
   const [showFarmers, setShowFarmers] = useState(false);
   const [showCustomerMenu, setShowCustomerMenu] = useState(false);
   const [showMessages, setShowMessages] = useState(false);
   const [showRequests, setShowRequests] = useState(false);
   const [messagePartner, setMessagePartner] = useState<MessagePartner | null>(null);
-  const [isExistingCook, setIsExistingCook] = useState(false);
-  const [showCustomerAuth, setShowCustomerAuth] = useState(false);
-  const [customerName, setCustomerName] = useState('');
-  const [customerEmail, setCustomerEmail] = useState('');
-  const [customerPassword, setCustomerPassword] = useState('');
-  const [isExistingCustomer, setIsExistingCustomer] = useState(true);
-  const [isAuthenticatingCustomer, setIsAuthenticatingCustomer] = useState(false);
   const [customerAuthMessage, setCustomerAuthMessage] = useState<string | null>(null);
   const [customerSessionToken, setCustomerSessionToken] = useState<string | null>(null);
   const [customerDisplayName, setCustomerDisplayName] = useState<string | null>(null);
-  const [entryStage, setEntryStage] = useState<'welcome' | 'role'>('welcome');
-  const [authIntent, setAuthIntent] = useState<'signin' | 'signup'>('signin');
-  const [customerPhone, setCustomerPhone] = useState('');
-  const [chefPhone, setChefPhone] = useState('');
-  const [customerConfirmPassword, setCustomerConfirmPassword] = useState('');
-  const [chefConfirmPassword, setChefConfirmPassword] = useState('');
-  const [customerTermsAccepted, setCustomerTermsAccepted] = useState(false);
-  const [customerSmsOptIn, setCustomerSmsOptIn] = useState(false);
-  const [smsPreferenceTouched, setSmsPreferenceTouched] = useState(false);
   const [customerMarketingSharing, setCustomerMarketingSharing] = useState(false);
   const [customerMarketingSharingTouched, setCustomerMarketingSharingTouched] = useState(false);
-  const [chefMarketingSharing, setChefMarketingSharing] = useState(true);
-  const [chefMarketingSharingTouched, setChefMarketingSharingTouched] = useState(false);
-  const [chefTermsAccepted, setChefTermsAccepted] = useState(false);
-  const [chefBio, setChefBio] = useState('');
-  const [chefProfileImageUrl, setChefProfileImageUrl] = useState('');
-  const [chefServiceTypes, setChefServiceTypes] = useState<string[]>(['prepared_meals']);
   const [isNewCustomer, setIsNewCustomer] = useState(false);
   const [customerOnboarding, setCustomerOnboarding] = useState(false);
   const [isRestoringSession, setIsRestoringSession] = useState(true);
+  const [pendingAccount, setPendingAccount] = useState<AccountSession | null>(null);
   const [favoriteCountries, setFavoriteCountries] = useState<string[]>([]);
   const [favoriteDishes, setFavoriteDishes] = useState<string[]>([]);
   const [onboardingCity, setOnboardingCity] = useState('');
@@ -256,7 +210,7 @@ export default function App() {
   useEffect(() => {
     let active = true;
     void authTokenStorage.get()
-      .then((storedSession) => {
+      .then(async (storedSession) => {
         if (!active || !storedSession) return;
         const session = JSON.parse(storedSession) as {
           token?: unknown;
@@ -267,11 +221,15 @@ export default function App() {
             (session.role !== 'chef' && session.role !== 'customer' && session.role !== 'farmer')) {
           throw new Error('Saved sign-in details are invalid. Please sign in again.');
         }
-        if (session.role === 'chef') setChefSessionToken(session.token);
-        else if (session.role === 'farmer') setFarmerSessionToken(session.token);
+        const account = await marketplaceApi(apiBaseUrl, session.token)<Omit<AccountSession, 'token'>>('/auth/me');
+        if (!active) return;
+        if (!['customer', 'chef', 'farmer'].includes(account.role)) throw new Error('Use an administrator sign-in for this account.');
+        if (account.requiresRoleSelection) setPendingAccount({ ...account, token: session.token });
+        else if (account.role === 'chef') setChefSessionToken(session.token);
+        else if (account.role === 'farmer') setFarmerSessionToken(session.token);
         else {
           setCustomerSessionToken(session.token);
-          setCustomerDisplayName(typeof session.name === 'string' ? session.name : null);
+          setCustomerDisplayName(account.name);
         }
       })
       .catch((error: unknown) => {
@@ -289,23 +247,46 @@ export default function App() {
     };
   }, []);
 
-  async function showGuideForFirstTime(role: 'customer' | 'chef') {
-    setGuideError(null);
-    setGuideStep(0);
-    try {
-      const hasCompletedGuide = await AsyncStorage.getItem(guideCompletionKey);
-      setGuideRole(hasCompletedGuide ? null : role);
-      if (hasCompletedGuide && role === 'customer' && isNewCustomer) {
-        setCustomerOnboarding(true);
-      }
-    } catch (error) {
-      setGuideRole(role);
-      setGuideError(
-        error instanceof Error
-          ? `Could not check your guide preference: ${error.message}`
-          : 'Could not check your guide preference.',
-      );
+  async function acceptAccount(session: AccountSession) {
+    await authTokenStorage.set(JSON.stringify(session));
+    setCustomerAuthMessage(null);
+    setPendingAccount(session.requiresRoleSelection ? session : null);
+    setChefSessionToken(null);
+    setFarmerSessionToken(null);
+    setCustomerSessionToken(null);
+    if (session.requiresRoleSelection) return;
+    if (session.role === 'chef') setChefSessionToken(session.token);
+    else if (session.role === 'farmer') setFarmerSessionToken(session.token);
+    else {
+      setCustomerSessionToken(session.token);
+      setCustomerDisplayName(session.name);
     }
+    if (session.role !== 'farmer') {
+      setIsNewCustomer(Boolean(pendingAccount) && session.role === 'customer');
+      setGuideStep(0);
+      setGuideError(null);
+      try {
+        const completed = await AsyncStorage.getItem(guideCompletionKey);
+        if (!completed) setGuideRole(session.role);
+      } catch (error) {
+        setGuideRole(session.role);
+        setGuideError(error instanceof Error ? error.message : 'Could not load your guide preference.');
+      }
+    }
+  }
+
+  async function signOutAccount() {
+    await authTokenStorage.remove();
+    setPendingAccount(null);
+    setChefSessionToken(null);
+    setFarmerSessionToken(null);
+    setCustomerSessionToken(null);
+    setGuideRole(null);
+    setCustomerOnboarding(false);
+    setShowRequests(false);
+    setShowMessages(false);
+    setMessagePartner(null);
+    setShowFarmers(false);
   }
 
   async function finishGuide() {
@@ -353,11 +334,8 @@ export default function App() {
     setCustomerDisplayName(null);
     setShowFarmers(false);
     setShowCustomerMenu(false);
-    setShowCustomerAuth(false);
     setCustomerOnboarding(false);
     setGuideRole(null);
-    setAuthIntent('signin');
-    setEntryStage('role');
     setBookingOpen(false);
     setBookingNotice(null);
     setSelectedChef(null);
@@ -395,305 +373,6 @@ export default function App() {
     }
   }
 
-  async function registerChef() {
-    setSignupMessage(null);
-    if (!signupEmail.trim() || signupPassword.length < 8 ||
-        (!isExistingCook && signupPassword !== chefConfirmPassword) ||
-        (!isExistingCook && (!signupName.trim() || !chefName.trim() || !chefCity.trim() ||
-        !marketCountries.some(({ code }) => code === chefCountryCode.trim().toUpperCase()) ||
-        !chefCuisine.trim() || chefServiceTypes.length === 0 ||
-          (chefPhone.trim() !== '' && !isValidPhone(chefPhone)) ||
-          !chefTermsAccepted))) {
-      setSignupMessage(isExistingCook
-        ? 'Enter your email and a password of at least 8 characters.'
-        : 'Complete each required field, choose a supported country, confirm your password, and accept the Terms and Privacy Policy. If you add a phone number, include the country code (+...).');
-      return;
-    }
-
-    setIsSigningUp(true);
-    let accountCreated = false;
-    try {
-      const registrationResponse = await fetch(`${apiBaseUrl}/auth/${isExistingCook ? 'login' : 'register'}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(isExistingCook
-          ? { email: signupEmail.trim(), password: signupPassword }
-          : {
-              name: signupName.trim(),
-              email: signupEmail.trim(),
-              password: signupPassword,
-              role: 'chef',
-            }),
-      });
-      const registration = await registrationResponse.json();
-      if (!registrationResponse.ok) {
-        const message = Array.isArray(registration.message)
-          ? registration.message.join(' ')
-          : registration.message;
-        throw new Error(message ?? `Registration failed (${registrationResponse.status}).`);
-      }
-      accountCreated = true;
-
-      if (isExistingCook) {
-        if (registration.role !== 'chef') throw new Error('This account is not registered as a chef.');
-        await authTokenStorage.set(JSON.stringify({
-          token: registration.token,
-          role: 'chef',
-          name: registration.name,
-        }));
-        await showGuideForFirstTime('chef');
-        setChefSessionToken(registration.token);
-        setShowChefSignup(false);
-        setSignupMessage(null);
-        return;
-      }
-
-      if (chefPhone.trim()) {
-        const phoneResponse = await fetch(`${apiBaseUrl}/verification/me/phone`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${registration.token}`,
-          },
-          body: JSON.stringify({ phoneNumber: chefPhone.replace(/[\s()-]/g, '') }),
-        });
-        if (!phoneResponse.ok) {
-          const result = await phoneResponse.json();
-          const message = Array.isArray(result.message) ? result.message.join(' ') : result.message;
-          throw new Error(message ?? `Phone number could not be saved (${phoneResponse.status}).`);
-        }
-
-      }
-      const profileResponse = await fetch(`${apiBaseUrl}/chefs/me/profile`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${registration.token}`,
-        },
-        body: JSON.stringify({
-          displayName: chefName.trim(),
-          city: chefCity.trim(),
-          state: chefState.trim() || undefined,
-          countryCode: chefCountryCode.trim().toUpperCase(),
-          specialties: [chefCuisine.trim()],
-          bio: chefBio.trim() || undefined,
-          serviceTypes: chefServiceTypes,
-          profileImageUrl: chefProfileImageUrl.trim() || undefined,
-          serviceRadiusKm: 25,
-        }),
-      });
-      const profileResult = await profileResponse.json();
-      if (!profileResponse.ok) {
-        const message = Array.isArray(profileResult.message)
-          ? profileResult.message.join(' ')
-          : profileResult.message;
-        throw new Error(message ?? `Chef profile setup failed (${profileResponse.status}).`);
-      }
-
-      const serviceAreaResponse = await fetch(`${apiBaseUrl}/chefs/me/service-areas`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${registration.token}`,
-        },
-        body: JSON.stringify({
-          areas: [{
-            city: chefCity.trim(),
-            state: chefState.trim() || undefined,
-            countryCode: chefCountryCode.trim().toUpperCase(),
-            radiusKm: 25,
-            offersDelivery: false,
-            offersPickup: true,
-          }],
-        }),
-      });
-      const serviceAreaResult = await serviceAreaResponse.json();
-      if (!serviceAreaResponse.ok) {
-        const message = Array.isArray(serviceAreaResult.message)
-          ? serviceAreaResult.message.join(' ')
-          : serviceAreaResult.message;
-        throw new Error(message ?? `Service area setup failed (${serviceAreaResponse.status}).`);
-      }
-
-      let contactSyncNotice: string | null = null;
-      try {
-        const contactResponse = await fetch(`${apiBaseUrl}/auth/me/marketing-contact-preference`, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${registration.token}`,
-          },
-          body: JSON.stringify({
-            countryCode: chefCountryCode.trim().toUpperCase(),
-            enabled: chefMarketingSharing,
-            explicitConsent: chefMarketingSharingTouched,
-          }),
-        });
-        const contactResult = await contactResponse.json();
-        if (!contactResponse.ok) {
-          const message = Array.isArray(contactResult.message)
-            ? contactResult.message.join(' ')
-            : contactResult.message;
-          contactSyncNotice = message ?? `Contact preference could not be saved (${contactResponse.status}).`;
-        } else if (contactResult.exportStatus === 'not_configured') {
-          contactSyncNotice = 'Contact-list syncing is not configured yet; your preference was saved.';
-        }
-      } catch (contactError) {
-        contactSyncNotice = contactError instanceof Error
-          ? `Your cook profile is ready, but the contact preference could not be saved: ${contactError.message}`
-          : 'Your cook profile is ready, but the contact preference could not be saved.';
-      }
-
-      setSignupMessage(
-        `Your chef account and profile are submitted. AfroChop reviews chef profiles before they appear in customer search.${
-          contactSyncNotice ? ` ${contactSyncNotice}` : ''
-        }`,
-      );
-      setSignupLocked(true);
-      await authTokenStorage.set(JSON.stringify({
-        token: registration.token,
-        role: 'chef',
-        name: registration.name,
-      }));
-      await showGuideForFirstTime('chef');
-      setChefSessionToken(registration.token);
-      setShowChefSignup(false);
-    } catch (error) {
-      const message = getAuthErrorMessage(error, 'Could not complete chef registration.');
-      setSignupMessage(accountCreated
-        ? `Your account was created, but chef profile setup did not finish: ${message} Please contact support before registering again.`
-        : message);
-      if (accountCreated) setSignupLocked(true);
-    } finally {
-      setIsSigningUp(false);
-    }
-  }
-
-  async function authenticateCustomer() {
-    setCustomerAuthMessage(null);
-    if (!customerEmail.trim() || customerPassword.length < 8 ||
-        (!isExistingCustomer && (
-          !customerName.trim() ||
-          (customerPhone.trim() !== '' && !isValidPhone(customerPhone)) ||
-          (customerSmsOptIn && !customerPhone.trim()) ||
-          customerPassword !== customerConfirmPassword ||
-          !customerTermsAccepted
-        ))) {
-      setCustomerAuthMessage(isExistingCustomer
-        ? 'Enter your email and a password of at least 8 characters.'
-        : 'Complete each required field, confirm your password, and accept the Terms and Privacy Policy. A phone number is optional unless you opt in to text updates; include the country code (+...).');
-      return;
-    }
-
-    setIsAuthenticatingCustomer(true);
-    try {
-      const response = await fetch(
-        `${apiBaseUrl}/auth/${isExistingCustomer ? 'login' : 'register'}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(isExistingCustomer
-            ? { email: customerEmail.trim(), password: customerPassword }
-            : {
-                name: customerName.trim(),
-                email: customerEmail.trim(),
-                password: customerPassword,
-                role: 'customer',
-                smsOrderUpdates: customerSmsOptIn,
-              }),
-        },
-      );
-      const result = await response.json();
-      if (!response.ok) {
-        const message = Array.isArray(result.message) ? result.message.join(' ') : result.message;
-        throw new Error(message ?? `Sign in failed (${response.status}).`);
-      }
-      if (result.role !== 'customer') {
-        throw new Error('This account is not registered as a customer. Use the cook sign-in for chef accounts.');
-      }
-      const initialMarketingCountryCode =
-        typeof result.marketingCountryCode === 'string' ? result.marketingCountryCode : '';
-      setOnboardingCountryCode(initialMarketingCountryCode);
-      setOnboardingCountryName(
-        marketCountries.find(({ code }) => code === initialMarketingCountryCode)?.name ?? '',
-      );
-      setCustomerMarketingSharing(Boolean(result.marketingContactSharing));
-      setCustomerMarketingSharingTouched(false);
-
-      if (!isExistingCustomer && customerPhone.trim()) {
-        const phoneResponse = await fetch(`${apiBaseUrl}/verification/me/phone`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${result.token}`,
-          },
-          body: JSON.stringify({ phoneNumber: customerPhone.replace(/[\s()-]/g, '') }),
-        });
-        if (!phoneResponse.ok) {
-          const phoneResult = await phoneResponse.json();
-          const message = Array.isArray(phoneResult.message)
-            ? phoneResult.message.join(' ')
-            : phoneResult.message;
-          throw new Error(message ?? `Phone number could not be saved (${phoneResponse.status}).`);
-        }
-      } else if (isExistingCustomer && smsPreferenceTouched) {
-        if (customerSmsOptIn && customerPhone.trim()) {
-          const phoneResponse = await fetch(`${apiBaseUrl}/verification/me/phone`, {
-            method: 'PUT',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${result.token}`,
-            },
-            body: JSON.stringify({ phoneNumber: customerPhone.replace(/[\s()-]/g, '') }),
-          });
-          if (!phoneResponse.ok) {
-            const phoneResult = await phoneResponse.json();
-            const message = Array.isArray(phoneResult.message)
-              ? phoneResult.message.join(' ')
-              : phoneResult.message;
-            throw new Error(message ?? `Phone number could not be saved (${phoneResponse.status}).`);
-          }
-        }
-        const preferenceResponse = await fetch(`${apiBaseUrl}/auth/me/notification-preferences`, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${result.token}`,
-          },
-          body: JSON.stringify({ smsOrderUpdates: customerSmsOptIn }),
-        });
-        if (!preferenceResponse.ok) {
-          const preferenceResult = await preferenceResponse.json();
-          const message = Array.isArray(preferenceResult.message)
-            ? preferenceResult.message.join(' ')
-            : preferenceResult.message;
-          throw new Error(message ?? `Text preference could not be saved (${preferenceResponse.status}).`);
-        }
-      }
-
-      await authTokenStorage.set(JSON.stringify({
-        token: result.token,
-        role: 'customer',
-        name: result.name,
-      }));
-      setIsNewCustomer(!isExistingCustomer || !initialMarketingCountryCode);
-      await showGuideForFirstTime('customer');
-      setCustomerSessionToken(result.token);
-      setCustomerDisplayName(result.name);
-      setCustomerSmsOptIn(Boolean(result.smsOrderUpdates));
-      setSmsPreferenceTouched(false);
-      setCustomerPassword('');
-      setCustomerConfirmPassword('');
-      setShowCustomerAuth(false);
-      setCustomerAuthMessage(null);
-      setBookingNotice(null);
-    } catch (error) {
-      setCustomerAuthMessage(getAuthErrorMessage(error, 'Could not sign in.'));
-    } finally {
-      setIsAuthenticatingCustomer(false);
-    }
-  }
-
   async function submitQuoteRequest() {
     setBookingNotice(null);
     if (!customerSessionToken) {
@@ -713,6 +392,12 @@ export default function App() {
       return;
     }
     const requestedDate = parseDateKey(quoteDate);
+    const timeMatch = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(quoteStartTime.trim());
+    if (!timeMatch) {
+      setBookingNotice('Enter a service start time in 24-hour HH:MM format.');
+      return;
+    }
+    requestedDate.setHours(Number(timeMatch[1]), Number(timeMatch[2]), 0, 0);
     const durationMinutes = Number(quoteDuration);
     if (!Number.isFinite(requestedDate.getTime()) || requestedDate <= new Date()) {
       setBookingNotice('Choose a service date in the future.');
@@ -722,10 +407,12 @@ export default function App() {
       setBookingNotice('Service duration must be between 30 minutes and 12 hours.');
       return;
     }
-    if (!quoteJurisdiction.trim()) {
-      setBookingNotice('Enter the two-letter state or jurisdiction code for the service.');
+    if (!/^[A-Za-z0-9]{2,3}$/.test(quoteJurisdiction.trim())) {
+      setBookingNotice('Enter the two- or three-character state or jurisdiction code for the service.');
       return;
     }
+    const countryCode = selectedChef.countryCode ?? homeCountryCode;
+    const jurisdictionCode = `${countryCode}-${quoteJurisdiction.trim().toUpperCase()}`;
 
     setIsSubmittingQuote(true);
     try {
@@ -739,7 +426,8 @@ export default function App() {
           chefId: selectedChef.id,
           serviceType: quoteServiceType,
           requestedDate: requestedDate.toISOString(),
-          jurisdictionCode: quoteJurisdiction.trim().toUpperCase(),
+          jurisdictionCode,
+          serviceAddressId: quoteServiceType === 'in_home_cooking' ? quoteServiceAddressId || undefined : undefined,
           durationMinutes,
           notes: quoteNotes.trim() || undefined,
           disclosedAllergens: allergySelections,
@@ -762,6 +450,8 @@ export default function App() {
       setAllergySelections([]);
       setDietaryNotes('');
       setQuoteNotes('');
+      setBookingOpen(false);
+      setShowRequests(true);
     } catch (error) {
       setBookingNotice(error instanceof Error ? error.message : 'Could not send your quote request.');
     } finally {
@@ -838,11 +528,16 @@ export default function App() {
     <SafeAreaProvider>
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
       <StatusBar style="dark" />
+      {customerAuthMessage && (chefSessionToken || farmerSessionToken || customerSessionToken)
+        ? <Text accessibilityRole="alert" style={styles.stateError}>{customerAuthMessage}</Text> : null}
       {isRestoringSession ? (
         <View style={styles.authLoading}>
           <ActivityIndicator color={colors.forest} size="large" />
           <Text style={styles.signupIntro}>Checking your secure sign-in…</Text>
         </View>
+      ) : pendingAccount || (!chefSessionToken && !farmerSessionToken && !customerSessionToken) ? (
+        <SharedAccountFlow key={pendingAccount?.id ?? 'signed-out'} apiBaseUrl={apiBaseUrl} session={pendingAccount} initialError={customerAuthMessage}
+          onSession={acceptAccount} onSignOut={signOutAccount} />
       ) : guideRole ? (
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets keyboardDismissMode="on-drag">
           <View style={styles.guideScreen}>
@@ -1103,24 +798,9 @@ export default function App() {
         <FarmerWorkspace
           token={farmerSessionToken}
           apiBaseUrl={apiBaseUrl}
-          onSignOut={() => {
-            setFarmerSessionToken(null);
-            setShowFarmerAuth(false);
-            setEntryStage('welcome');
-            void authTokenStorage.remove().catch(() => undefined);
-          }}
-        />
-      ) : showFarmerAuth ? (
-        <FarmerAuth
-          apiBaseUrl={apiBaseUrl}
-          countries={marketCountries}
-          isSignIn={authIntent === 'signin'}
-          onBack={() => setShowFarmerAuth(false)}
-          onAuthenticated={(token, name) => {
-            void authTokenStorage.set(JSON.stringify({ token, role: 'farmer', name })).catch(() => undefined);
-            setFarmerSessionToken(token);
-            setShowFarmerAuth(false);
-          }}
+          onSignOut={() => { void signOutAccount().catch((error: unknown) => {
+            setCustomerAuthMessage(error instanceof Error ? error.message : 'Could not sign out.');
+          }); }}
         />
       ) : customerSessionToken && showRequests ? (
         <CustomerRequests
@@ -1156,381 +836,13 @@ export default function App() {
           token={chefSessionToken}
           countries={countries.filter((country): country is Country & { id: string } => Boolean(country.id))}
           apiBaseUrl={apiBaseUrl}
-          onSignOut={() => {
-            setChefSessionToken(null);
-            setShowChefSignup(false);
-            setEntryStage('welcome');
-            void authTokenStorage.remove().catch((error: unknown) => {
-              setDiscoveryError(error instanceof Error ? error.message : 'Could not clear saved sign-in.');
-            });
-          }}
+          onSignOut={() => { void signOutAccount().catch((error: unknown) => {
+            setCustomerAuthMessage(error instanceof Error ? error.message : 'Could not sign out.');
+          }); }}
         />
       ) : (
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets keyboardDismissMode="on-drag">
-        {showCustomerAuth ? (
-          <View style={styles.signupScreen}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => {
-                setShowCustomerAuth(false);
-                setCustomerAuthMessage(null);
-                setEntryStage('role');
-              }}
-              style={styles.backButton}
-            >
-              <Text style={styles.linkText}>‹ Back</Text>
-            </Pressable>
-            <AfroChopLogo />
-            <Text style={styles.eyebrow}>{isExistingCustomer ? 'Welcome back' : 'Join AfroChop'}</Text>
-            <Text style={styles.title}>
-              {isExistingCustomer ? 'Welcome Back!' : 'Create your account'}
-            </Text>
-            <Text style={styles.signupIntro}>{isExistingCustomer
-              ? 'Your next taste of home awaits.'
-              : 'Find local cooks and bring your favorite food to the table.'}</Text>
-            {!isExistingCustomer ? (
-              <AuthInput
-                label="Full name"
-                placeholder="Your full name"
-                value={customerName}
-                onChangeText={setCustomerName}
-              />
-            ) : null}
-            <AuthInput
-              label="Email address"
-              placeholder="you@example.com"
-              value={customerEmail}
-              onChangeText={setCustomerEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              autoComplete="email"
-            />
-            {!isExistingCustomer ? (
-              <AuthInput
-                label="Phone number (optional, include +country code)"
-                placeholder="+1 555 123 4567"
-                value={customerPhone}
-                onChangeText={setCustomerPhone}
-                keyboardType="phone-pad"
-                autoComplete="tel"
-                autoCapitalize="none"
-              />
-            ) : null}
-            <PasswordInput
-              label="Password"
-              placeholder="At least 8 characters"
-              value={customerPassword}
-              onChangeText={setCustomerPassword}
-            />
-            {!isExistingCustomer ? (
-              <PasswordInput
-                label="Confirm password"
-                placeholder="Re-enter your password"
-                value={customerConfirmPassword}
-                onChangeText={setCustomerConfirmPassword}
-              />
-            ) : null}
-            {!isExistingCustomer ? (
-              <Pressable
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: customerTermsAccepted }}
-                onPress={() => setCustomerTermsAccepted((value) => !value)}
-                style={styles.consentRow}
-              >
-                <View style={[styles.checkbox, customerTermsAccepted && styles.checkboxChecked]}>
-                  {customerTermsAccepted ? <Text style={styles.checkboxTick}>✓</Text> : null}
-                </View>
-                <Text style={styles.consentText}>I agree to the Terms of Service and Privacy Policy.</Text>
-              </Pressable>
-            ) : null}
-            {isExistingCustomer ? (
-              <Text style={styles.formFootnote}>
-                Leave your text-update preference unchanged, or choose to enable or turn off order texts below.
-              </Text>
-            ) : null}
-            <Pressable
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: customerSmsOptIn }}
-              onPress={() => {
-                setCustomerSmsOptIn((value) => !value);
-                if (isExistingCustomer) setSmsPreferenceTouched(true);
-              }}
-              style={styles.consentRow}
-            >
-              <View style={[styles.checkbox, customerSmsOptIn && styles.checkboxChecked]}>
-                {customerSmsOptIn ? <Text style={styles.checkboxTick}>✓</Text> : null}
-              </View>
-              <Text style={styles.consentText}>
-                {isExistingCustomer
-                  ? 'Enable text updates for quotes and order status.'
-                  : 'Text me quote and order status updates. Message and data rates may apply. Reply STOP to opt out.'}
-              </Text>
-            </Pressable>
-            {isExistingCustomer && customerSmsOptIn ? (
-              <AuthInput
-                label="Mobile number (optional if already on your account)"
-                placeholder="+1 555 123 4567"
-                value={customerPhone}
-                onChangeText={setCustomerPhone}
-                keyboardType="phone-pad"
-                autoComplete="tel"
-                autoCapitalize="none"
-              />
-            ) : null}
-            {isExistingCustomer ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ selected: smsPreferenceTouched && !customerSmsOptIn }}
-                onPress={() => {
-                  setCustomerSmsOptIn(false);
-                  setSmsPreferenceTouched(true);
-                }}
-                style={styles.preferenceAction}
-              >
-                <Text style={styles.linkText}>
-                  {smsPreferenceTouched && !customerSmsOptIn ? 'Text updates will be off' : 'Turn off text updates'}
-                </Text>
-              </Pressable>
-            ) : null}
-            <PrimaryButton
-              label={isExistingCustomer ? 'Sign In' : 'Create Account'}
-              loading={isAuthenticatingCustomer}
-              onPress={() => void authenticateCustomer()}
-            />
-            {customerAuthMessage ? <Text accessibilityRole="alert" style={styles.signupMessage}>{customerAuthMessage}</Text> : null}
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => {
-                setIsExistingCustomer((current) => !current);
-                setCustomerSmsOptIn(false);
-                setSmsPreferenceTouched(false);
-                setCustomerAuthMessage(null);
-              }}
-            >
-              <Text style={styles.linkText}>
-                {isExistingCustomer ? 'New to AfroChop? Create an account' : 'Already have an account? Sign in'}
-              </Text>
-            </Pressable>
-            {!isExistingCustomer ? (
-              <Text style={styles.formFootnote}>
-                Email and phone are recorded as pending verification. Verification codes are not available yet.
-              </Text>
-            ) : null}
-          </View>
-        ) : showChefSignup ? (
-          <View style={styles.signupScreen}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => {
-                setShowChefSignup(false);
-                setSignupMessage(null);
-                setEntryStage('role');
-              }}
-              style={styles.backButton}
-            >
-              <Text style={styles.linkText}>‹ Back</Text>
-            </Pressable>
-            <AfroChopLogo />
-            <Text style={styles.eyebrow}>{isExistingCook ? 'Welcome back' : 'Cook with AfroChop'}</Text>
-            <Text style={styles.title}>{isExistingCook ? 'Welcome Back!' : 'Create your cook account'}</Text>
-            <Text style={styles.signupIntro}>
-              {isExistingCook
-                ? 'Your cooking workspace is ready when you are.'
-                : 'Create your cook account and starter profile. Profiles go through AfroChop review before customers can find them.'}
-            </Text>
-            {!isExistingCook ? (
-              <AuthInput
-                label="Full name"
-                placeholder="Your full name"
-                value={signupName}
-                onChangeText={setSignupName}
-              />
-            ) : null}
-            <AuthInput
-              label="Email address"
-              placeholder="you@example.com"
-              value={signupEmail}
-              onChangeText={setSignupEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              autoComplete="email"
-            />
-            {!isExistingCook ? (
-              <AuthInput
-                label="Phone number (optional, include +country code)"
-                placeholder="+1 555 123 4567"
-                value={chefPhone}
-                onChangeText={setChefPhone}
-                keyboardType="phone-pad"
-                autoComplete="tel"
-                autoCapitalize="none"
-              />
-            ) : null}
-            <PasswordInput
-              label="Password"
-              placeholder="At least 8 characters"
-              value={signupPassword}
-              onChangeText={setSignupPassword}
-            />
-            {!isExistingCook ? (
-              <PasswordInput
-                label="Confirm password"
-                placeholder="Re-enter your password"
-                value={chefConfirmPassword}
-                onChangeText={setChefConfirmPassword}
-              />
-            ) : null}
-            {!isExistingCook ? (
-              <Pressable
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: chefTermsAccepted }}
-                onPress={() => setChefTermsAccepted((value) => !value)}
-                style={styles.consentRow}
-              >
-                <View style={[styles.checkbox, chefTermsAccepted && styles.checkboxChecked]}>
-                  {chefTermsAccepted ? <Text style={styles.checkboxTick}>✓</Text> : null}
-                </View>
-                <Text style={styles.consentText}>I agree to the Terms of Service and Privacy Policy.</Text>
-              </Pressable>
-            ) : null}
-            {!isExistingCook ? <View style={styles.formDivider} /> : null}
-            {!isExistingCook ? <Text style={styles.formSectionTitle}>Your cook profile</Text> : null}
-            {!isExistingCook ? <>
-            <AuthInput
-              label="Chef or kitchen name"
-              placeholder="Your public cook name"
-              value={chefName}
-              onChangeText={setChefName}
-            />
-            <AuthInput
-              label="Short biography"
-              placeholder="Tell customers about your cooking..."
-              value={chefBio}
-              onChangeText={setChefBio}
-              multiline
-              style={styles.bioInput}
-            />
-            <AuthInput
-              label="Profile photo URL (optional)"
-              placeholder="https://..."
-              value={chefProfileImageUrl}
-              onChangeText={setChefProfileImageUrl}
-              autoCapitalize="none"
-              keyboardType="url"
-            />
-            <Text style={styles.countryPickerLabel}>Which African country’s cuisine do you cook?</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.signupCountryChoices}>
-              {sortCuisineCountries(countries).map((country) => (
-                <Pressable
-                  key={country.id ?? country.name}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: chefCuisine === country.name }}
-                  onPress={() => setChefCuisine(country.name)}
-                  style={[
-                    styles.filterPill,
-                    chefCuisine === country.name && styles.filterPillSelected,
-                  ]}
-                >
-                  <Text style={[
-                    styles.filterText,
-                    chefCuisine === country.name && styles.filterTextSelected,
-                  ]}>{country.flag} {country.name}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-            <Text style={styles.countryPickerLabel}>What services do you offer?</Text>
-            <View style={styles.onboardingChoices}>
-              {[
-                ['prepared_meals', 'Prepared meals'],
-                ['bulk_meal_prep', 'Meal prep'],
-                ['in_home_cooking', 'In-home cooking'],
-                ['grocery_shopping', 'Grocery shopping'],
-                ['special_event', 'Special events'],
-                ['postpartum', 'Postpartum meals'],
-                ['recurring', 'Recurring service'],
-              ].map(([value, label]) => {
-                const selected = chefServiceTypes.includes(value);
-                return (
-                  <Pressable
-                    key={value}
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: selected }}
-                    onPress={() => setChefServiceTypes((current) =>
-                      selected ? current.filter((item) => item !== value) : [...current, value],
-                    )}
-                    style={[styles.onboardingChip, selected && styles.onboardingChipSelected]}
-                  >
-                    <Text style={[styles.onboardingChipText, selected && styles.onboardingChipTextSelected]}>
-                      {label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-            <LocationDropdowns
-              countries={marketCountries}
-              apiBaseUrl={apiBaseUrl}
-              countryCode={chefCountryCode}
-              countryName={marketCountries.find(({ code }) => code === chefCountryCode)?.name ?? ''}
-              state={chefState}
-              city={chefCity}
-              onCountryChange={(code, name) => {
-                setChefCountryCode(code);
-                setChefState('');
-                setChefCity('');
-                if (code.length === 2) {
-                  setChefMarketingSharing(!marketingContactRequiresOptIn(code));
-                  setChefMarketingSharingTouched(false);
-                }
-              }}
-              onStateChange={setChefState}
-              onCityChange={setChefCity}
-            />
-            <Pressable
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: chefMarketingSharing }}
-              onPress={() => {
-                setChefMarketingSharing((value) => !value);
-                setChefMarketingSharingTouched(true);
-              }}
-              style={styles.consentRow}
-            >
-              <View style={[
-                styles.checkbox,
-                chefMarketingSharing && styles.checkboxChecked,
-              ]}>
-                {chefMarketingSharing ? <Text style={styles.checkboxTick}>✓</Text> : null}
-              </View>
-              <Text style={styles.consentText}>
-                {marketingContactRequiresOptIn(chefCountryCode)
-                  ? 'Optional: I agree to share my name, email, and phone with AfroChop’s Google Sheets contact list for promotional updates.'
-                  : 'AfroChop will store my name, email, and phone in its Google Sheets contact list for promotional updates. Uncheck to opt out.'}
-              </Text>
-            </Pressable>
-            </> : null}
-            <PrimaryButton
-              label={isExistingCook ? 'Sign In' : signupLocked ? 'Registration submitted' : 'Create cook account'}
-              loading={isSigningUp}
-              disabled={!isExistingCook && signupLocked}
-              onPress={() => void registerChef()}
-            />
-            {signupMessage ? <Text style={styles.signupMessage}>{signupMessage}</Text> : null}
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => {
-                setIsExistingCook((current) => !current);
-                setSignupMessage(null);
-              }}
-            >
-              <Text style={styles.linkText}>
-                {isExistingCook ? 'New to AfroChop? Create a cook account' : 'Already a cook? Sign in to manage your menu'}
-              </Text>
-            </Pressable>
-            {!isExistingCook ? <Text style={styles.formFootnote}>
-              Phone verification is pending; verification codes are not available yet. A new cook profile remains under review and is not approved automatically.
-            </Text> : null}
-          </View>
-        ) : customerSessionToken ? (
+        {customerSessionToken ? (
         <>
         <View style={styles.topRow}>
           <View style={styles.customerHeader}>
@@ -1733,7 +1045,7 @@ export default function App() {
           </View>
         ) : chefs.length === 0 ? (
           <View style={styles.stateCard}>
-            <Text style={styles.stateText}>No approved cooks match this search yet. Try another area or cuisine.</Text>
+            <Text style={styles.stateText}>No cooks match this search yet. Try another area or cuisine.</Text>
             <Pressable accessibilityRole="button" onPress={resetCustomerHome} style={[styles.primaryButton, styles.retryButton]}>
               <Text style={styles.primaryButtonText}>Clear search and start over</Text>
             </Pressable>
@@ -1906,8 +1218,6 @@ export default function App() {
                 onPress={() => {
                   if (!customerSessionToken) {
                     setBookingOpen(true);
-                    setShowCustomerAuth(true);
-                    setIsExistingCustomer(true);
                     setCustomerAuthMessage(null);
                     return;
                   }
@@ -1925,12 +1235,14 @@ export default function App() {
                 setBookingNotice(null);
                 setAllergyAcknowledged(false);
                 setQuoteServiceType(selectedChef.serviceTypes[0] ?? 'prepared_meals');
+                const chefRegion = selectedChef.state?.trim() ?? '';
                 setQuoteJurisdiction(
-                  selectedChef.state?.trim().length === 2
-                    ? selectedChef.state.trim().toUpperCase()
-                    : 'MD',
+                  /^[A-Za-z0-9]{2,3}$/.test(chefRegion)
+                    ? chefRegion.toUpperCase()
+                    : '',
                 );
                 setQuoteDate('');
+                setQuoteStartTime('');
               }}
             >
               <Text style={styles.primaryButtonText}>Discuss an order & get a quote</Text>
@@ -1947,8 +1259,6 @@ export default function App() {
                       accessibilityRole="button"
                       style={styles.primaryButton}
                       onPress={() => {
-                        setShowCustomerAuth(true);
-                        setIsExistingCustomer(true);
                         setCustomerAuthMessage(null);
                       }}
                     >
@@ -1958,6 +1268,13 @@ export default function App() {
                 ) : (
                   <>
                     <Text style={styles.cardTitle}>Request a quote</Text>
+                    <AccountVerification
+                      token={customerSessionToken}
+                      apiBaseUrl={apiBaseUrl}
+                      jurisdiction={`${selectedChef.countryCode ?? homeCountryCode}-${quoteJurisdiction.trim().toUpperCase()}`}
+                      selectedAddressId={quoteServiceAddressId}
+                      onSelectAddress={quoteServiceType === 'in_home_cooking' ? setQuoteServiceAddressId : undefined}
+                    />
                     <Text style={styles.cardText}>
                       Choose a service and the date of service, then share any allergies or dietary needs with the cook as part of your request.
                     </Text>
@@ -1984,12 +1301,22 @@ export default function App() {
                     <CalendarPicker
                       value={quoteDate}
                       onChange={setQuoteDate}
-                      minDate={new Date(Date.now() + 24 * 60 * 60 * 1000)}
+                      minDate={new Date()}
                     />
                     <Text style={styles.formFootnote}>
                       {quoteDate ? `Selected: ${parseDateKey(quoteDate).toDateString()}` : 'Please choose the date you need the service.'}
                     </Text>
+                    <Text style={styles.countryPickerLabel}>Start time (24-hour HH:MM) *</Text>
                     <View style={styles.formRow}>
+                      <TextInput
+                        accessibilityLabel="Service start time in 24-hour HH:MM format"
+                        placeholder="e.g. 14:30"
+                        placeholderTextColor="#756C61"
+                        value={quoteStartTime}
+                        onChangeText={setQuoteStartTime}
+                        maxLength={5}
+                        style={[styles.formInput, styles.formInputHalf]}
+                      />
                       <TextInput
                         accessibilityLabel="Service duration in minutes"
                         placeholder="Duration (minutes)"
@@ -1999,17 +1326,22 @@ export default function App() {
                         keyboardType="number-pad"
                         style={[styles.formInput, styles.formInputHalf]}
                       />
+                    </View>
+                    <View style={styles.formRow}>
                       <TextInput
-                        accessibilityLabel="Two-letter service jurisdiction code"
-                        placeholder="State code"
+                        accessibilityLabel={`State or jurisdiction code in ${selectedChef.countryCode ?? homeCountryCode}`}
+                        placeholder="State / region code"
                         placeholderTextColor="#756C61"
                         value={quoteJurisdiction}
                         onChangeText={setQuoteJurisdiction}
                         autoCapitalize="characters"
-                        maxLength={2}
+                        maxLength={3}
                         style={[styles.formInput, styles.formInputHalf]}
                       />
                     </View>
+                    <Text style={styles.formFootnote}>
+                      Jurisdiction: {selectedChef.countryCode ?? homeCountryCode}-{quoteJurisdiction.toUpperCase()}
+                    </Text>
                     <TextInput
                       accessibilityLabel="Order details for the cook"
                       placeholder="What would you like the cook to prepare?"
@@ -2131,7 +1463,7 @@ export default function App() {
                   </Text>
                 </View>
                 {chef.foodPhotos.length > 0 ? (
-                  <Text style={styles.photoCount}>{chef.foodPhotos.length} food photos</Text>
+                  <Text style={styles.photoCount}>{chef.foodPhotos.length} food photos and videos</Text>
                 ) : null}
               </View>
               <Text style={styles.chevron}>›</Text>
@@ -2140,84 +1472,7 @@ export default function App() {
         )}
 
         </>
-        ) : entryStage === 'welcome' ? (
-          <View style={styles.welcomeScreen}>
-            <View style={styles.welcomePattern} />
-            <AfroChopLogo />
-            <Text style={styles.welcomeTitle}>A Taste of Home,{'\n'}Wherever You Are.</Text>
-            <Text style={styles.welcomeTagline}>Find Your Cook. Taste Your Culture.</Text>
-            <WelcomeFoodImage />
-            <View style={styles.welcomeDishRow}>
-              {['🍚 Jollof', '🥬 Ndolé', '🥣 Egusi', '🍢 Suya', '🫓 Injera'].map((dish) => (
-                <Text key={dish} style={styles.welcomeDish}>{dish}</Text>
-              ))}
-            </View>
-            <PrimaryButton
-              label="Get Started"
-              onPress={() => {
-                setAuthIntent('signup');
-                setEntryStage('role');
-              }}
-            />
-            <PrimaryButton
-              label="Sign In"
-              secondary
-              onPress={() => {
-                setAuthIntent('signin');
-                setEntryStage('role');
-              }}
-            />
-            <Text style={styles.welcomeFooter}>Authentic African Food. Made with Love.</Text>
-          </View>
-        ) : (
-          <View style={styles.signupScreen}>
-            <Pressable accessibilityRole="button" onPress={() => setEntryStage('welcome')} style={styles.backButton}>
-              <Text style={styles.linkText}>‹ Back</Text>
-            </Pressable>
-            <AfroChopLogo />
-            <Text style={styles.eyebrow}>{authIntent === 'signin' ? 'WELCOME BACK' : 'JOIN THE TABLE'}</Text>
-            <Text style={styles.title}>How will you use AfroChop?</Text>
-            <Text style={styles.signupIntro}>
-              {authIntent === 'signin'
-                ? 'Choose your account type to sign in.'
-                : 'Choose your account type to get started.'}
-            </Text>
-            <RoleSelectionCard
-              icon="🍽️"
-              title="I’m Looking for Food"
-              description="Discover local cooks, explore menus, and request a quote."
-              onPress={() => {
-                setIsExistingCustomer(authIntent === 'signin');
-                setCustomerTermsAccepted(false);
-                setCustomerAuthMessage(null);
-                setShowChefSignup(false);
-                setShowCustomerAuth(true);
-              }}
-            />
-            <RoleSelectionCard
-              icon="🌽"
-              title="I’m a Local Farmer"
-              description="Showcase fresh corn, okra and African vegetables to nearby customers."
-              onPress={() => {
-                setShowCustomerAuth(false);
-                setShowChefSignup(false);
-                setShowFarmerAuth(true);
-              }}
-            />
-            <RoleSelectionCard
-              icon="👩🏾‍🍳"
-              title="I’m a Chef / Cook"
-              description="Showcase your cooking and build your AfroChop profile."
-              onPress={() => {
-                setIsExistingCook(authIntent === 'signin');
-                setChefTermsAccepted(false);
-                setSignupMessage(null);
-                setShowCustomerAuth(false);
-                setShowChefSignup(true);
-              }}
-            />
-          </View>
-        )}
+        ) : null}
       </ScrollView>
       )}
     </SafeAreaView>

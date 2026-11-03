@@ -3,11 +3,14 @@ import {
   ExecutionContext,
   Injectable,
   UnauthorizedException,
+  ForbiddenException,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { Request } from 'express';
 import { UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { ALLOW_ROLE_SELECTION } from './role-selection.decorator.js';
 
 export interface AuthenticatedRequest extends Request {
   user: { sub: string; role: UserRole };
@@ -22,6 +25,7 @@ export class JwtAuthGuard implements CanActivate {
   constructor(
     private readonly jwtService: JwtService,
     private readonly prisma: PrismaService,
+    private readonly reflector: Reflector = new Reflector(),
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -46,10 +50,17 @@ export class JwtAuthGuard implements CanActivate {
 
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { isActive: true, role: true },
+      select: { isActive: true, role: true, roleSelectedAt: true },
     });
     if (!user?.isActive || user.role !== payload.role) {
       throw new UnauthorizedException('This account is inactive or its access has changed.');
+    }
+
+    if (user.role !== UserRole.admin && !user.roleSelectedAt &&
+        !this.reflector.getAllAndOverride<boolean>(ALLOW_ROLE_SELECTION, [
+          context.getHandler(), context.getClass(),
+        ])) {
+      throw new ForbiddenException('Choose how you will use AfroChop before continuing.');
     }
 
     request.user = { sub: payload.sub, role: user.role };

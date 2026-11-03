@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Param,
   ParseEnumPipe,
   ParseUUIDPipe,
@@ -29,15 +30,44 @@ import {
   SafetyIncidentReviewDto,
   ServiceAddressReviewDto,
   UserVerificationReviewDto,
+  VerificationCodeDto,
 } from './dto/safety.dto.js';
 import { SafetyService } from './safety.service.js';
+import { VerificationCodeService } from './verification-code.service.js';
 
 @Controller()
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class SafetyController {
-  constructor(private readonly safetyService: SafetyService) {}
+  constructor(private readonly safetyService: SafetyService, private readonly codes: VerificationCodeService) {}
+
+  @Get('admin/verification/service-addresses/:id')
+  @Header('Cache-Control', 'no-store')
+  @Roles(UserRole.admin)
+  readServiceAddress(@Req() request: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
+    return this.safetyService.getAdminServiceAddress(request.user.sub, id);
+  }
+
+  @Get('verification/bookings/:id/service-address')
+  @Header('Cache-Control', 'no-store')
+  @Roles(UserRole.customer, UserRole.chef)
+  readBookingServiceAddress(@Req() request: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
+    return this.safetyService.getBookingServiceAddress(request.user.sub, request.user.role, id);
+  }
+
+  @Post('verification/me/:type/send-code')
+  @Roles(UserRole.customer, UserRole.chef)
+  sendCode(@Req() request: AuthenticatedRequest, @Param('type', new ParseEnumPipe(UserVerificationType)) type: UserVerificationType) {
+    return this.codes.send(request.user.sub, type);
+  }
+
+  @Post('verification/me/:type/check-code')
+  @Roles(UserRole.customer, UserRole.chef)
+  checkCode(@Req() request: AuthenticatedRequest, @Param('type', new ParseEnumPipe(UserVerificationType)) type: UserVerificationType, @Body() dto: VerificationCodeDto) {
+    return this.codes.check(request.user.sub, type, dto.code);
+  }
 
   @Get('verification/me')
+  @Header('Cache-Control', 'no-store')
   @Roles(UserRole.customer, UserRole.chef)
   getMyVerification(@Req() request: AuthenticatedRequest) {
     return this.safetyService.getMyVerification(request.user.sub, request.user.role);

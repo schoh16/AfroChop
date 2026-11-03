@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createDecipheriv, hkdfSync } from 'node:crypto';
 import twilio from 'twilio';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { decryptVerificationValue } from '../safety/verification-crypto.js';
 
 export type CustomerOrderSmsStatus =
   | 'requested'
@@ -79,29 +79,6 @@ export class SmsNotificationService {
   }
 
   private decryptPhoneNumber(encryptedValue: string) {
-    const encodedKey = this.config.get<string>('VERIFICATION_ENCRYPTION_KEY');
-    if (!encodedKey) throw new Error('Phone-number decryption key is not configured.');
-    const masterKey = Buffer.from(encodedKey, 'base64');
-    if (masterKey.length !== 32) throw new Error('Phone-number decryption key must be 32 bytes.');
-
-    const [version, encodedIv, encodedTag, encodedCiphertext] = encryptedValue.split('.');
-    if (version !== 'v1' || !encodedIv || !encodedTag || !encodedCiphertext) {
-      throw new Error('Stored phone number has an unsupported encrypted format.');
-    }
-    const key = Buffer.from(
-      hkdfSync(
-        'sha256',
-        masterKey,
-        Buffer.from('afrochop-verification-v1'),
-        Buffer.from('field-encryption'),
-        32,
-      ),
-    );
-    const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(encodedIv, 'base64url'));
-    decipher.setAuthTag(Buffer.from(encodedTag, 'base64url'));
-    return Buffer.concat([
-      decipher.update(Buffer.from(encodedCiphertext, 'base64url')),
-      decipher.final(),
-    ]).toString('utf8');
+    return decryptVerificationValue(encryptedValue, this.config.get<string>('VERIFICATION_ENCRYPTION_KEY'));
   }
 }

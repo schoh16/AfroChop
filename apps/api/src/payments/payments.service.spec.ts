@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { PaymentsService, STRIPE_CLIENT } from './payments.service.js';
+import { BookingMoneyService } from './booking-money.service.js';
 
 describe('PaymentsService Connect onboarding and configuration', () => {
   const transaction = {
@@ -62,6 +63,7 @@ describe('PaymentsService Connect onboarding and configuration', () => {
     const module = await Test.createTestingModule({
       providers: [
         PaymentsService,
+        { provide: BookingMoneyService, useValue: { handleEvent: vi.fn().mockResolvedValue(false) } },
         { provide: PrismaService, useValue: prisma },
         { provide: ConfigService, useValue: config },
         { provide: STRIPE_CLIENT, useValue: stripe },

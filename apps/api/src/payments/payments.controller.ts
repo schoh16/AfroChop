@@ -5,6 +5,7 @@ import {
   Headers,
   Header,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -21,12 +22,59 @@ import { Roles } from '../auth/roles.decorator.js';
 import { RolesGuard } from '../auth/roles.guard.js';
 import { PaymentConfigurationDto } from './dto/payment-configuration.dto.js';
 import { PaymentsService } from './payments.service.js';
+import { BookingMoneyService } from './booking-money.service.js';
+import { BookingRefundDto, ReviewBookingRefundDto } from './dto/booking-refund.dto.js';
 
 type RawBodyRequest = Request & { rawBody?: Buffer };
 
 @Controller('payments')
 export class PaymentsController {
-  constructor(private readonly paymentsService: PaymentsService) {}
+  constructor(
+    private readonly paymentsService: PaymentsService,
+    private readonly money: BookingMoneyService,
+  ) {}
+
+  @Get('bookings/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.customer, UserRole.chef, UserRole.admin)
+  paymentStatus(@Req() request: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
+    return this.money.getStatus(id, request.user.sub, request.user.role);
+  }
+
+  @Post('bookings/:id/release')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.customer, UserRole.chef, UserRole.admin)
+  release(@Req() request: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
+    return this.money.releaseForUser(id, request.user.sub, request.user.role);
+  }
+
+  @Post('bookings/:id/refund-request')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.customer)
+  requestRefund(@Req() request: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: BookingRefundDto) {
+    return this.money.requestRefund(id, request.user.sub, dto.reason);
+  }
+
+  @Get('admin/bookings')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.admin)
+  listPayments() {
+    return this.money.listAdmin();
+  }
+
+  @Post('admin/bookings/:id/reconcile')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.admin)
+  reconcile(@Param('id', ParseUUIDPipe) id: string) {
+    return this.money.reconcile(id);
+  }
+
+  @Post('admin/bookings/:id/refund-review')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.admin)
+  reviewRefund(@Req() request: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: ReviewBookingRefundDto) {
+    return this.money.reviewRefund(id, request.user.sub, dto);
+  }
 
   @Get('configuration')
   getCustomerPaymentConfiguration() {

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { LocationDropdowns } from './LocationDropdowns';
+import { SellerPhotos } from './SellerPhotos';
 import { AfroChopLogo, AuthInput, PasswordInput, PrimaryButton } from './AuthUi';
 import {
   ChatMessage,
   FarmInquiry,
+  FarmApiError,
   Produce,
   createFarmApi,
   farmTheme as c,
@@ -12,6 +14,7 @@ import {
 } from '../lib/farmApi';
 
 type FarmerProfile = {
+  profileImageUrl: string | null;
   farmName: string;
   bio: string | null;
   city: string;
@@ -148,8 +151,12 @@ export function FarmerWorkspace({
 
   const load = useCallback(async () => {
     try {
-      const p = await api<FarmerProfile>('/farmers/me/profile').catch(() => null);
-      if (!p) {
+      const p = await api<FarmerProfile>('/farmers/me/profile').catch((error: unknown) => {
+        if (error instanceof FarmApiError && error.status === 404) return null;
+        throw error;
+      });
+      if (!p?.city) {
+        if (p) setFarmName(p.farmName);
         setNeedsProfile(true);
         return;
       }
@@ -249,6 +256,9 @@ export function FarmerWorkspace({
       <Text style={s.muted}>{profile ? `${profile.city}${profile.state ? `, ${profile.state}` : ''}` : ''}</Text>
       {error ? <Text style={s.error}>{error}</Text> : null}
       {notice ? <Text style={s.notice}>{notice}</Text> : null}
+      <SellerPhotos apiBaseUrl={apiBaseUrl} token={token}
+        profileImageUrl={profile?.profileImageUrl ?? null}
+        onProfileChanged={(url) => setProfile((current) => current ? { ...current, profileImageUrl: url } : current)} />
 
       <Text style={s.section}>Customer requests ({inquiries.length})</Text>
       {inquiries.length === 0 ? <Text style={s.muted}>No requests yet.</Text> : null}

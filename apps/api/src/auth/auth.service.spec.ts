@@ -4,6 +4,7 @@ import type { JwtService } from '@nestjs/jwt';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuthService } from './auth.service.js';
+import * as bcrypt from 'bcryptjs';
 
 describe('AuthService login', () => {
   const prisma = {
@@ -55,5 +56,28 @@ describe('AuthService login', () => {
     })).rejects.toBeInstanceOf(ServiceUnavailableException);
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
     expect(prisma.user.create).not.toHaveBeenCalled();
+  });
+
+  it('creates a neutral pending account even if an old client supplies a seller role', async () => {
+    prisma.user.findUnique.mockResolvedValue(null);
+    prisma.user.create.mockImplementation(({ data }) => ({ id: 'new-user', ...data }));
+    const result = await service.register({
+      name: 'New User', email: 'USER@example.com', password: 'Password123!', role: 'chef',
+    });
+    expect(result).toMatchObject({ role: 'customer', requiresRoleSelection: true });
+    expect(prisma.user.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ email: 'user@example.com', role: 'customer' }),
+    }));
+  });
+
+  it.each(['customer', 'chef', 'farmer'] as const)('uses the same login for %s accounts and reports pending selection', async (role) => {
+    const passwordHash = await bcrypt.hash('Password123!', 4);
+    const user = { id: 'user-id', name: 'Test User', email: 'user@example.com', role, isActive: true, passwordHash, roleSelectedAt: null };
+    prisma.user.findUnique.mockResolvedValue(user);
+    await expect(service.login({ email: user.email, password: 'Password123!' }))
+      .resolves.toMatchObject({ role, requiresRoleSelection: true });
+    prisma.user.findUnique.mockResolvedValue({ ...user, roleSelectedAt: new Date() });
+    await expect(service.login({ email: user.email, password: 'Password123!' }))
+      .resolves.toMatchObject({ role, requiresRoleSelection: false });
   });
 });

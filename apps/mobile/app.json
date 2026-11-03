@@ -2,7 +2,7 @@
   "expo": {
     "name": "AfroChop",
     "slug": "afrochop",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -28,13 +28,27 @@
     },
     "plugins": [
       "expo-secure-store",
-      "expo-video"
+      "expo-video",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow AfroChop to select photos and videos for your public seller profile and showcase.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ]
     ],
     "extra": {
       "eas": {
         "projectId": "0b071d09-312c-4226-85f8-9972f666e2d5"
       }
     },
-    "owner": "schoh"
+    "owner": "schoh",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/0b071d09-312c-4226-85f8-9972f666e2d5"
+    }
   }
 }

@@ -1,12 +1,15 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   Optional,
 } from '@nestjs/common';
 import {
   BookingStatus,
+  Prisma,
   QuoteStatus,
   UserRole,
   UserVerificationType,
@@ -21,8 +24,10 @@ import {
 } from './dto/chef-quote.dto.js';
 import { AllergyResponseDto } from './dto/allergy-response.dto.js';
 import { SmsNotificationService } from '../notifications/sms-notification.service.js';
+import { BookingMoneyService } from '../payments/booking-money.service.js';
 
 export const ALLERGY_NOTICE_VERSION = '2026-10-08-v1';
+export const BOOKING_PAYMENT_HOLD_MS = 24 * 60 * 60 * 1000;
 
 // Local development only: skips booking compliance gates. Never honored in production.
 function devComplianceBypassEnabled() {
@@ -34,9 +39,11 @@ export class QuotesService {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly smsNotifications?: SmsNotificationService,
+    @Optional() private readonly money?: BookingMoneyService,
   ) {}
 
   async listForCustomer(customerId: string) {
+    await this.expirePaymentHolds(new Date());
     return this.prisma.bookingRequest.findMany({
       where: { customerId },
       orderBy: { createdAt: 'desc' },
@@ -61,6 +68,7 @@ export class QuotesService {
   }
 
   async listForChef(userId: string) {
+    await this.expirePaymentHolds(new Date());
     const chef = await this.prisma.chefProfile.findUnique({
       where: { userId },
       select: { id: true },
@@ -344,29 +352,150 @@ export class QuotesService {
       throw new BadRequestException('This quote can no longer be answered.');
     }
 
-    return this.prisma.$transaction(async (transaction) => {
-      const updated = await transaction.quote.update({
-        where: { id: quoteId },
-        data: accept
-          ? { status: QuoteStatus.accepted, acceptedAt: new Date() }
-          : { status: QuoteStatus.declined },
+    try {
+      return await this.prisma.$transaction(
+        async (transaction) => {
+          const now = new Date();
+          await this.expirePaymentHolds(now, transaction);
+          const currentQuote = await transaction.quote.findUnique({
+            where: { id: quoteId },
+            select: {
+              id: true,
+              status: true,
+              bookingRequestId: true,
+              bookingRequest: {
+                select: {
+                  id: true,
+                  customerId: true,
+                  chefId: true,
+                  status: true,
+                  desiredDate: true,
+                  serviceEndAt: true,
+                },
+              },
+            },
+          });
+          if (
+            !currentQuote ||
+            currentQuote.bookingRequest.customerId !== customerId
+          ) {
+            throw new NotFoundException('Quote not found.');
+          }
+          if (
+            currentQuote.status !== QuoteStatus.pending ||
+            currentQuote.bookingRequest.status !== BookingStatus.quoted
+          ) {
+            throw new ConflictException('This quote can no longer be answered.');
+          }
+
+          if (!accept) {
+            return transaction.quote.update({
+              where: { id: quoteId },
+              data: { status: QuoteStatus.declined },
+            });
+          }
+
+          const booking = currentQuote.bookingRequest;
+          if (!booking.chefId || !booking.desiredDate || !booking.serviceEndAt) {
+            throw new ConflictException('This booking is missing the time details needed to reserve a slot.');
+          }
+          const conflictingBooking = await transaction.bookingRequest.findFirst({
+            where: {
+              chefId: booking.chefId,
+              id: { not: booking.id },
+              desiredDate: { lt: booking.serviceEndAt },
+              serviceEndAt: { gt: booking.desiredDate },
+              OR: [
+                { status: { in: [BookingStatus.confirmed, BookingStatus.in_progress] } },
+                {
+                  status: BookingStatus.awaiting_payment,
+                  paymentHoldExpiresAt: { gt: now },
+                },
+                {
+                  status: BookingStatus.awaiting_payment,
+                  stripeCheckoutSessionId: { not: null },
+                },
+              ],
+            },
+            select: { id: true },
+          });
+          if (conflictingBooking) {
+            throw new ConflictException('The cook already has a booking during that time. Choose another time or cook.');
+          }
+
+          const quoteClaim = await transaction.quote.updateMany({
+            where: { id: quoteId, status: QuoteStatus.pending },
+            data: { status: QuoteStatus.accepted, acceptedAt: now },
+          });
+          if (quoteClaim.count !== 1) {
+            throw new ConflictException('This quote was already answered.');
+          }
+
+          const holdExpiresAt = new Date(now.getTime() + BOOKING_PAYMENT_HOLD_MS);
+          const bookingClaim = await transaction.bookingRequest.updateMany({
+            where: { id: booking.id, status: BookingStatus.quoted },
+            data: {
+              status: BookingStatus.awaiting_payment,
+              paymentHoldExpiresAt: holdExpiresAt,
+            },
+          });
+          if (bookingClaim.count !== 1) {
+            throw new ConflictException('This booking was already updated.');
+          }
+
+          await transaction.quote.updateMany({
+            where: {
+              bookingRequestId: booking.id,
+              id: { not: quoteId },
+              status: QuoteStatus.pending,
+            },
+            data: { status: QuoteStatus.declined },
+          });
+
+          return transaction.quote.findUniqueOrThrow({ where: { id: quoteId } });
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      );
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2034'
+      ) {
+        throw new ConflictException('The cook’s schedule changed. Refresh requests and try again.');
+      }
+      throw error;
+    }
+  }
+
+  private async expirePaymentHolds(
+    now: Date,
+    transaction?: Prisma.TransactionClient,
+  ) {
+    const expire = async (tx: Prisma.TransactionClient) => {
+      const expiredBookings = await tx.bookingRequest.updateMany({
+        where: {
+          status: BookingStatus.awaiting_payment,
+          stripeCheckoutSessionId: null,
+          paymentHoldExpiresAt: { lte: now },
+        },
+        data: { status: BookingStatus.expired },
       });
-      if (accept) {
-        await transaction.quote.updateMany({
+      if (expiredBookings.count > 0) {
+        await tx.quote.updateMany({
           where: {
-            bookingRequestId: quote.bookingRequestId,
-            id: { not: quoteId },
-            status: QuoteStatus.pending,
+            bookingRequest: {
+              status: BookingStatus.expired,
+              paymentHoldExpiresAt: { lte: now },
+            },
+            status: QuoteStatus.accepted,
           },
-          data: { status: QuoteStatus.declined },
-        });
-        await transaction.bookingRequest.update({
-          where: { id: quote.bookingRequestId },
-          data: { status: BookingStatus.awaiting_payment },
+          data: { status: QuoteStatus.expired },
         });
       }
-      return updated;
-    });
+    };
+
+    if (transaction) return expire(transaction);
+    await this.prisma.$transaction(expire);
   }
 
   async submitReceipt(
@@ -434,6 +563,9 @@ export class QuotesService {
         customerCompletedAt: booking.customerCompletedAt,
       };
     }
+    if (isCustomer && !booking.chefCompletedAt) {
+      throw new ConflictException('Wait for the cook to mark delivery complete before confirming receipt.');
+    }
     if (
       (isCustomer && booking.customerCompletedAt) ||
       (isAssignedChef && booking.chefCompletedAt)
@@ -448,12 +580,21 @@ export class QuotesService {
     const completedAt = new Date();
 
     const updatedBooking = await this.prisma.$transaction(async (transaction) => {
-      await transaction.bookingRequest.update({
-        where: { id: bookingRequestId },
+      const updated = await transaction.bookingRequest.updateMany({
+        where: {
+          id: bookingRequestId,
+          status: { in: [BookingStatus.confirmed, BookingStatus.in_progress] },
+          ...(isCustomer
+            ? { chefCompletedAt: { not: null }, customerCompletedAt: null }
+            : { chefCompletedAt: null }),
+        },
         data: isCustomer
           ? { customerCompletedAt: completedAt }
           : { chefCompletedAt: completedAt },
       });
+      if (updated.count !== 1) {
+        throw new ConflictException('Booking completion changed. Refresh and try again.');
+      }
       await transaction.bookingRequest.updateMany({
         where: {
           id: bookingRequestId,
@@ -475,6 +616,15 @@ export class QuotesService {
     });
     if (updatedBooking.status === BookingStatus.completed) {
       await this.smsNotifications?.notifyCustomerOrderStatus(bookingRequestId, 'completed');
+      if (this.money) {
+        try {
+          await this.money.release(bookingRequestId);
+        } catch (error) {
+          if (!(error instanceof ConflictException)) throw error;
+          new Logger(QuotesService.name).warn(`Completion recorded; booking ${bookingRequestId} payout remains held: ${error.message}`);
+          return { ...updatedBooking, payoutStatus: 'held', payoutMessage: error.message };
+        }
+      }
     }
     return updatedBooking;
   }

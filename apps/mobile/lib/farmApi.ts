@@ -18,6 +18,7 @@ export type Farmer = {
   offersPickup: boolean;
   offersDelivery: boolean;
   profileImageUrl?: string | null;
+  photos?: { id: string; imageUrl: string; mediaType?: 'image' | 'video'; caption: string | null }[];
   produce: Produce[];
 };
 
@@ -42,6 +43,13 @@ export type ChatMessage = {
   createdAt: string;
 };
 
+export class FarmApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = 'FarmApiError';
+  }
+}
+
 export function createFarmApi(apiBaseUrl: string, token?: string) {
   return async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await fetch(`${apiBaseUrl}${path}`, {
@@ -55,7 +63,7 @@ export function createFarmApi(apiBaseUrl: string, token?: string) {
     const body = text ? JSON.parse(text) : null;
     if (!response.ok) {
       const message = Array.isArray(body?.message) ? body.message.join(' ') : body?.message;
-      throw new Error(message ?? `Request failed (${response.status}).`);
+      throw new FarmApiError(message ?? `Request failed (${response.status}).`, response.status);
     }
     return body as T;
   };

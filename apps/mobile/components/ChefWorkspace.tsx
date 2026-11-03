@@ -9,8 +9,11 @@ import {
   View,
 } from 'react-native';
 import { ChefPayoutSetup } from './ChefPayoutSetup';
+import { BookingPaymentStatus } from './BookingPaymentStatus';
+import { AccountVerification } from './AccountVerification';
 import { Messaging, type MessagePartner } from './Messaging';
 import { ChefVerificationChecklist } from './ChefVerificationChecklist';
+import { SellerPhotos } from './SellerPhotos';
 import { marketingContactRequiresOptIn } from '../lib/marketingRegions';
 
 type WorkspaceCountry = {
@@ -75,6 +78,9 @@ type ChefBookingRequest = {
   status: string;
   serviceType: string;
   requestedDate: string | null;
+  paymentHoldExpiresAt: string | null;
+  chefCompletedAt: string | null;
+  customerCompletedAt: string | null;
   durationMinutes: number | null;
   notes: string | null;
   disclosedAllergens: string[];
@@ -159,8 +165,10 @@ export function ChefWorkspace({
   const [templateEntryIds, setTemplateEntryIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [chefCommissionBps, setChefCommissionBps] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [bookingAddresses, setBookingAddresses] = useState<Record<string, string>>({});
   const [mediaUrl, setMediaUrl] = useState('');
   const [mediaCaption, setMediaCaption] = useState('');
   const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
@@ -212,17 +220,19 @@ export function ChefWorkspace({
     setIsLoading(true);
     setError(null);
     try {
-      const [entries, savedTemplates, savedSocialLinks, marketingPreference, savedProfile, savedQuoteRequests] = await Promise.all([
+      const [entries, savedTemplates, savedSocialLinks, marketingPreference, savedProfile, savedQuoteRequests, payoutConfiguration] = await Promise.all([
         request<MenuEntry[]>('/chefs/me/menu'),
         request<MenuTemplate[]>('/chefs/me/menu-templates'),
         request<ChefSocialLinks>('/chefs/me/social-links'),
         request<MarketingContactPreference>('/auth/me/marketing-contact-preference'),
         request<ChefProfileDetails>('/chefs/me/profile'),
         request<ChefBookingRequest[]>('/quotes/requests'),
+        request<{ chefCommissionBps: number }>('/payments/chef/connect/status'),
       ]);
       setMenu(entries);
       setTemplates(savedTemplates);
       setQuoteRequests(savedQuoteRequests);
+      setChefCommissionBps(payoutConfiguration.chefCommissionBps);
       setSocialLinks(savedSocialLinks);
       setProfileName(savedProfile.displayName);
       setProfileBio(savedProfile.bio ?? '');
@@ -263,7 +273,7 @@ export function ChefWorkspace({
     const load = () =>
       void request<ChefBookingRequest[]>('/quotes/requests')
         .then(setQuoteRequests)
-        .catch(() => undefined);
+        .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Could not refresh bookings.'));
     load();
     const timer = setInterval(load, 10000);
     return () => clearInterval(timer);
@@ -521,6 +531,33 @@ export function ChefWorkspace({
     }
   }
 
+  async function markDeliveryComplete(bookingId: string) {
+    setIsSaving(true);
+    setError(null);
+    try {
+      await request(`/quotes/requests/${bookingId}/complete`, { method: 'PATCH' });
+      setQuoteRequests(await request<ChefBookingRequest[]>('/quotes/requests'));
+      setBookingAddresses((current) => { const next = { ...current }; delete next[bookingId]; return next; });
+      setNotice('Delivery/service marked complete. The customer must confirm receipt before your funds are released.');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not mark delivery complete.');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function viewBookingAddress(bookingId: string) {
+    setError(null);
+    try {
+      const address = await request<{ line1: string; line2: string | null; city: string; region: string; postalCode: string; countryCode: string }>(
+        `/verification/bookings/${bookingId}/service-address`,
+      );
+      setBookingAddresses((current) => ({ ...current, [bookingId]: [address.line1, address.line2, address.city, address.region, address.postalCode, address.countryCode].filter(Boolean).join(', ') }));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not read service address.');
+    }
+  }
+
   async function sendQuote(booking: ChefBookingRequest) {
     const amountText = (quoteAmounts[booking.id] ?? '').trim();
     const amount = Number(amountText);
@@ -667,6 +704,7 @@ export function ChefWorkspace({
           New cook profiles remain under review until AfroChop completes required checks.
         </Text>
         <ChefVerificationChecklist accessToken={token} />
+        <AccountVerification token={token} apiBaseUrl={apiBaseUrl} customer={false} />
       </View> : null}
       {activePage === 'payments' ? <ChefPayoutSetup accessToken={token} /> : null}
 
@@ -684,6 +722,8 @@ export function ChefWorkspace({
 
       {activePage === 'profile' ? (
       <>
+      <SellerPhotos apiBaseUrl={apiBaseUrl} token={token}
+        profileImageUrl={profileImageUrl || null} onProfileChanged={setProfileImageUrl} />
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Profile details</Text>
         <Text style={styles.helper}>These details help customers understand your cooking and find your services.</Text>
@@ -963,18 +1003,17 @@ export function ChefWorkspace({
           <ActivityIndicator color="#185A43" />
           <Text style={styles.helper}>Loading your quote requests…</Text>
         </View>
-      ) : quoteRequests.filter((booking) => ['requested', 'quoted', 'awaiting_payment'].includes(booking.status)).length === 0 ? (
+      ) : quoteRequests.length === 0 ? (
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>No quote requests yet</Text>
           <Text style={styles.helper}>New customer requests will appear here. You can review the details and send your quote from this page.</Text>
         </View>
       ) : quoteRequests
-        .filter((booking) => ['requested', 'quoted', 'awaiting_payment'].includes(booking.status))
         .map((booking) => {
           const latestQuote = booking.quotes[0];
           const quoteAmount = Number(quoteAmounts[booking.id] ?? '');
-          const canShowEstimate = Number.isFinite(quoteAmount) && quoteAmount > 0;
-          const commission = canShowEstimate ? quoteAmount * 0.1 : 0;
+          const canShowEstimate = Number.isFinite(quoteAmount) && quoteAmount > 0 && chefCommissionBps !== null;
+          const commission = canShowEstimate && chefCommissionBps !== null ? Math.round(quoteAmount * chefCommissionBps / 100) / 100 : 0;
           const estimatedPayout = canShowEstimate ? quoteAmount - commission : 0;
 
           return (
@@ -988,6 +1027,32 @@ export function ChefWorkspace({
                   : 'Date not provided'}
                 {booking.durationMinutes ? ` · ${booking.durationMinutes} minutes` : ''}
               </Text>
+              {booking.status === 'awaiting_payment' && booking.paymentHoldExpiresAt ? (
+                <Text style={styles.helper}>
+                  Customer payment hold ends {new Date(booking.paymentHoldExpiresAt).toLocaleString()}.
+                </Text>
+              ) : null}
+              {booking.serviceType === 'in_home_cooking' && ['confirmed', 'in_progress'].includes(booking.status) ? (
+                <>
+                  <Pressable accessibilityRole="button" onPress={() => void viewBookingAddress(booking.id)} style={styles.secondaryButton}>
+                    <Text style={styles.secondaryText}>View verified service address</Text>
+                  </Pressable>
+                  {bookingAddresses[booking.id] ? <Text style={styles.helper}>{bookingAddresses[booking.id]}</Text> : null}
+                </>
+              ) : null}
+              {['confirmed', 'in_progress'].includes(booking.status) ? (
+                booking.chefCompletedAt ? (
+                  <Text style={styles.helper}>Delivery/service marked complete. Waiting for the customer to confirm receipt before your funds are released.</Text>
+                ) : (
+                  <Pressable accessibilityRole="button" disabled={isSaving} style={styles.primaryButton}
+                    onPress={() => void markDeliveryComplete(booking.id)}>
+                    <Text style={styles.primaryText}>Mark delivery / service complete</Text>
+                  </Pressable>
+                )
+              ) : null}
+              {['confirmed', 'in_progress', 'completed', 'disputed', 'cancelled'].includes(booking.status) ? (
+                <BookingPaymentStatus bookingId={booking.id} token={token} apiBaseUrl={apiBaseUrl} customer={false} completed={booking.status === 'completed'} />
+              ) : null}
               {booking.customer ? (
                 <>
                   <Text style={styles.helper}>Customer: {booking.customer.name}</Text>
@@ -1059,12 +1124,12 @@ export function ChefWorkspace({
                     {latestQuote.status === 'pending'
                       ? ' · Awaiting customer response'
                       : latestQuote.status === 'accepted'
-                        ? ' · Accepted by customer — awaiting payment'
+                        ? ` · Accepted by customer | ${booking.status.replaceAll('_', ' ')}`
                         : ` · ${latestQuote.status}`}
                   </Text>
                   {latestQuote.notes ? <Text style={styles.helper}>Quote details: {latestQuote.notes}</Text> : null}
                 </>
-              ) : (
+              ) : ['requested', 'quoted'].includes(booking.status) ? (
                 <>
                   <TextInput
                     accessibilityLabel="Quote amount in dollars"
@@ -1084,11 +1149,11 @@ export function ChefWorkspace({
                   />
                   {canShowEstimate ? (
                     <Text style={styles.quoteSummary}>
-                      Estimated 10% commission: ${commission.toFixed(2)} · Estimated payout: ${estimatedPayout.toFixed(2)} before any other applicable fees.
+                      Estimated commission: ${commission.toFixed(2)} · Estimated payout: ${estimatedPayout.toFixed(2)} before any other applicable fees.
                     </Text>
                   ) : null}
                   <Text style={styles.commissionNotice}>
-                    AfroChop will deduct a 10% commission from this sale after the customer pays. Review the commission and estimated payout above before sending your quote.
+                    AfroChop deducts its configured commission. The rate is snapshotted at checkout; your share is held until the customer confirms receipt. Review the estimated payout before quoting.
                   </Text>
                   <Pressable
                     accessibilityRole="button"
@@ -1099,7 +1164,7 @@ export function ChefWorkspace({
                     <Text style={styles.primaryText}>{isSaving ? 'Sending quote…' : 'Send quote to customer'}</Text>
                   </Pressable>
                 </>
-              )}
+              ) : <Text style={styles.helper}>Booking: {booking.status.replaceAll('_', ' ')}</Text>}
             </View>
           );
         })}
