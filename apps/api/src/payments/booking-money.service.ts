@@ -50,7 +50,13 @@ export class BookingMoneyService {
     }
   }
 
-  async prepareCheckout(bookingId: string, quoteCents: number, chefCommissionBps: number, customerFeeBps: number) {
+  async prepareCheckout(
+    bookingId: string,
+    quoteCents: number,
+    chefCommissionBps: number,
+    customerFeeBps: number,
+    currency: string,
+  ) {
     const booking = await this.prisma.bookingRequest.findUnique({
       where: { id: bookingId },
       include: { chef: { include: { stripeConnectedAccount: true } } },
@@ -72,6 +78,7 @@ export class BookingMoneyService {
       create: {
         bookingId, destinationAccountId: account.stripeAccountId, quoteCents,
         platformFeeCents, customerFeeCents, grossCents, chefCents,
+        currency,
       },
       update: {},
     });

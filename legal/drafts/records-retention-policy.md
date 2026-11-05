@@ -10,6 +10,7 @@ Collect and retain the minimum information needed for service delivery, complian
 
 | Record class | Typical examples | Access | Retention period / trigger |
 |---|---|---|---|
+| Cook applications and home-visit addresses | Application status, encrypted visit address, interview and profile-setup dates, administrative notes | Applicant, specifically authorized staff; address access and administrative decisions are audited | [COUNSEL TO SET] |
 | Customer allergy/dietary disclosure | Disclosed allergens, restriction notes, acknowledgment timestamp/version, cook response | Customer, assigned cook, authorized safety/support personnel | [COUNSEL TO SET] |
 | Booking and communications | Request, quotes, status changes, in-app messages | Booking participants, authorized support/safety staff | [COUNSEL TO SET] |
 | Menu safety statements | Ingredients, allergens, cross-contact risks, changes | Public fields only for public dishes; change history restricted | [COUNSEL TO SET] |

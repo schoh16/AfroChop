@@ -1,3 +1,5 @@
+import { authenticatedFetch as fetch } from './session';
+
 export type Produce = {
   id: string;
   name: string;

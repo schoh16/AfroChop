@@ -3,6 +3,7 @@ import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { Platform } from 'react-native';
 import { File } from 'expo-file-system';
 import { fetch as expoFetch } from 'expo/fetch';
+import { getAccessToken } from './session';
 
 export async function pickProfilePhoto(profile = true): Promise<string | null> {
   const result = await ImagePicker.launchImageLibraryAsync({
@@ -12,7 +13,24 @@ export async function pickProfilePhoto(profile = true): Promise<string | null> {
     quality: 1,
   });
   if (result.canceled) return null;
-  const asset = result.assets[0];
+  return prepareSellerPhoto(result.assets[0], profile);
+}
+
+export async function pickShowcasePhotos(): Promise<ImagePicker.ImagePickerAsset[]> {
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ['images'],
+    allowsMultipleSelection: true,
+    selectionLimit: 10,
+    orderedSelection: true,
+    allowsEditing: false,
+    quality: 1,
+  });
+  if (result.canceled) return [];
+  if (result.assets.length > 10) throw new Error('Choose up to 10 photos at a time.');
+  return result.assets;
+}
+
+export async function prepareSellerPhoto(asset: ImagePicker.ImagePickerAsset, profile = false): Promise<string> {
   const side = Math.min(asset.width, asset.height);
   const context = ImageManipulator.manipulate(asset.uri);
   if (profile) context.crop({
@@ -21,15 +39,17 @@ export async function pickProfilePhoto(profile = true): Promise<string | null> {
     width: side, height: side,
   }).resize({ width: 640, height: 640 });
   else context.resize(asset.width >= asset.height ? { width: Math.min(asset.width, 1600) } : { height: Math.min(asset.height, 1600) });
-  const image = await context.renderAsync();
-  const saved = await image.saveAsync({ compress: 0.75, format: SaveFormat.JPEG });
-  image.release();
-  context.release();
-  return saved.uri;
+  try {
+    const image = await context.renderAsync();
+    try {
+      const saved = await image.saveAsync({ compress: 0.75, format: SaveFormat.JPEG });
+      return saved.uri;
+    } finally { image.release(); }
+  } finally { context.release(); }
 }
 
 export async function uploadSellerPhoto<T>(
-  apiBaseUrl: string, token: string, uri: string, profile: boolean, caption?: string,
+  apiBaseUrl: string, _token: string, uri: string, profile: boolean, caption?: string,
 ): Promise<T> {
   const form = new FormData();
   if (Platform.OS === 'web') {
@@ -43,7 +63,7 @@ export async function uploadSellerPhoto<T>(
   }
   if (caption) form.append('caption', caption);
   const response = await expoFetch(`${apiBaseUrl}/media/${profile ? 'profile-photo' : 'gallery'}`, {
-    method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form,
+    method: 'POST', headers: { Authorization: `Bearer ${await getAccessToken()}` }, body: form,
   });
   const result = await response.json();
   if (!response.ok) throw new Error(Array.isArray(result.message) ? result.message.join(' ') : result.message ?? `Photo upload failed (${response.status}).`);

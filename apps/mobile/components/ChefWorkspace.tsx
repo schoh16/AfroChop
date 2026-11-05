@@ -1,3 +1,4 @@
+import { authenticatedFetch as fetch } from '../lib/session';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -15,6 +16,7 @@ import { Messaging, type MessagePartner } from './Messaging';
 import { ChefVerificationChecklist } from './ChefVerificationChecklist';
 import { SellerPhotos } from './SellerPhotos';
 import { marketingContactRequiresOptIn } from '../lib/marketingRegions';
+import { currencyForCountry, formatCurrency } from '../lib/currency';
 
 type WorkspaceCountry = {
   id: string;
@@ -36,6 +38,15 @@ type ChefProfileDetails = {
   profileImageUrl: string | null;
   coverImageUrl: string | null;
   serviceAreas: ChefServiceAreaDetails[];
+};
+
+type ChefApplication = {
+  id: string;
+  status: 'submitted' | 'visit_scheduled' | 'interviewed' | 'profile_setup' | 'rejected';
+  submittedAt: string;
+  visitScheduledAt: string | null;
+  interviewedAt: string | null;
+  profileSetupAt: string | null;
 };
 
 type ChefServiceAreaDetails = {
@@ -195,6 +206,13 @@ export function ChefWorkspace({
   const [offersDelivery, setOffersDelivery] = useState(false);
   const [offersPickup, setOffersPickup] = useState(false);
   const [profileServiceAreas, setProfileServiceAreas] = useState<ChefServiceAreaDetails[]>([]);
+  const [application, setApplication] = useState<ChefApplication | null>(null);
+  const [applicationAddressLine1, setApplicationAddressLine1] = useState('');
+  const [applicationAddressLine2, setApplicationAddressLine2] = useState('');
+  const [applicationAddressCity, setApplicationAddressCity] = useState('');
+  const [applicationAddressRegion, setApplicationAddressRegion] = useState('');
+  const [applicationAddressPostalCode, setApplicationAddressPostalCode] = useState('');
+  const [applicationAddressCountryCode, setApplicationAddressCountryCode] = useState('');
   const [activePage, setActivePage] = useState<ChefWorkspacePage>('profile');
   const [chatPartner, setChatPartner] = useState<MessagePartner | null>(null);
   const [showWorkspaceMenu, setShowWorkspaceMenu] = useState(false);
@@ -220,7 +238,7 @@ export function ChefWorkspace({
     setIsLoading(true);
     setError(null);
     try {
-      const [entries, savedTemplates, savedSocialLinks, marketingPreference, savedProfile, savedQuoteRequests, payoutConfiguration] = await Promise.all([
+      const [entries, savedTemplates, savedSocialLinks, marketingPreference, savedProfile, savedQuoteRequests, payoutConfiguration, savedApplication] = await Promise.all([
         request<MenuEntry[]>('/chefs/me/menu'),
         request<MenuTemplate[]>('/chefs/me/menu-templates'),
         request<ChefSocialLinks>('/chefs/me/social-links'),
@@ -228,10 +246,12 @@ export function ChefWorkspace({
         request<ChefProfileDetails>('/chefs/me/profile'),
         request<ChefBookingRequest[]>('/quotes/requests'),
         request<{ chefCommissionBps: number }>('/payments/chef/connect/status'),
+        request<ChefApplication | null>('/chefs/me/application'),
       ]);
       setMenu(entries);
       setTemplates(savedTemplates);
       setQuoteRequests(savedQuoteRequests);
+      setApplication(savedApplication);
       setChefCommissionBps(payoutConfiguration.chefCommissionBps);
       setSocialLinks(savedSocialLinks);
       setProfileName(savedProfile.displayName);
@@ -347,9 +367,42 @@ export function ChefWorkspace({
               }],
         }),
       });
-      setNotice('Your public cook profile and service area have been saved.');
+      setNotice(application?.status === 'profile_setup'
+        ? 'Your public profile and service area have been saved.'
+        : 'Your profile draft and service area have been saved. Customers will see your profile after AfroChop completes the visit and setup.');
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not save your public cook profile.');
+      setError(cause instanceof Error ? cause.message : 'Could not save your cook profile.');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function submitApplication() {
+    if (!applicationAddressLine1.trim() || !applicationAddressCity.trim() ||
+        !applicationAddressRegion.trim() || !applicationAddressPostalCode.trim() ||
+        !/^[A-Za-z]{2}$/.test(applicationAddressCountryCode.trim())) {
+      setError('Enter your complete visit address, including a two-letter country code.');
+      return;
+    }
+    setIsSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const saved = await request<ChefApplication>('/chefs/me/application', {
+        method: 'POST',
+        body: JSON.stringify({
+          line1: applicationAddressLine1.trim(),
+          line2: applicationAddressLine2.trim() || undefined,
+          city: applicationAddressCity.trim(),
+          region: applicationAddressRegion.trim(),
+          postalCode: applicationAddressPostalCode.trim(),
+          countryCode: applicationAddressCountryCode.trim().toUpperCase(),
+        }),
+      });
+      setApplication(saved);
+      setNotice('Application submitted. AfroChop will contact you to arrange a home visit.');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not submit your application.');
     } finally {
       setIsSaving(false);
     }
@@ -500,7 +553,9 @@ export function ChefWorkspace({
       });
       setMediaUrl('');
       setMediaCaption('');
-      setNotice(`${mediaType === 'image' ? 'Photo' : 'Video'} added to your public food gallery.`);
+      setNotice(application?.status === 'profile_setup'
+        ? `${mediaType === 'image' ? 'Photo' : 'Video'} added to your public food gallery.`
+        : `${mediaType === 'image' ? 'Photo' : 'Video'} saved and will appear after your profile setup is complete.`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not add food media.');
     } finally {
@@ -623,13 +678,19 @@ export function ChefWorkspace({
       : [...current, entryId]);
   }
 
+  const exampleCurrency = currencyForCountry(profileCountryCode);
+  const exampleSaleCents = 10_000;
+  const exampleCommissionCents = chefCommissionBps === null
+    ? null
+    : Math.round(exampleSaleCents * chefCommissionBps / 10_000);
+
   return (
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets keyboardDismissMode="on-drag">
       <View style={styles.header}>
         <View style={styles.headerCopy}>
           <Text style={styles.eyebrow}>CHEF WORKSPACE</Text>
           <Text style={styles.title}>
-            {activePage === 'profile' ? 'Your public profile'
+            {activePage === 'profile' ? application?.status === 'profile_setup' ? 'Your public profile' : 'Your profile draft'
               : activePage === 'menu' ? 'Your menu'
                 : activePage === 'quotes' ? 'Quote requests'
                 : activePage === 'messages' ? 'Messages'
@@ -711,22 +772,178 @@ export function ChefWorkspace({
       {activePage === 'policy' ? (
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>AfroChop sales commission</Text>
+          {chefCommissionBps !== null && exampleCommissionCents !== null ? (
+            <>
+              <Text style={styles.helper}>
+                AfroChop deducts {chefCommissionBps / 100}% of your quoted sale amount.
+                The rate and your share are saved at checkout.
+              </Text>
+              <View style={styles.commissionExample}>
+                <Text style={styles.sectionTitle}>Example sale ({exampleCurrency})</Text>
+                <View style={styles.commissionRow}>
+                  <Text style={styles.commissionLabel}>Your quoted sale</Text>
+                  <Text style={styles.commissionAmount}>
+                    {formatCurrency(exampleSaleCents / 100, exampleCurrency)}
+                  </Text>
+                </View>
+                <View style={styles.commissionRow}>
+                  <Text style={styles.commissionLabel}>AfroChop fee ({chefCommissionBps / 100}%)</Text>
+                  <Text style={styles.commissionAmount}>
+                    -{formatCurrency(exampleCommissionCents / 100, exampleCurrency)}
+                  </Text>
+                </View>
+                <View style={[styles.commissionRow, styles.commissionTotal]}>
+                  <Text style={styles.commissionAmount}>Your share</Text>
+                  <Text style={styles.commissionAmount}>
+                    {formatCurrency((exampleSaleCents - exampleCommissionCents) / 100, exampleCurrency)}
+                  </Text>
+                </View>
+                <Text style={styles.helper}>Illustration only, not a balance or payout guarantee.</Text>
+              </View>
+            </>
+          ) : (
+            <Text style={styles.helper}>
+              {isLoading ? 'Loading your commission rate...' : 'Your commission rate could not be loaded. Refresh before relying on an estimate.'}
+            </Text>
+          )}
+          <Text style={styles.fieldLabel}>Fees and adjustments</Text>
           <Text style={styles.helper}>
-            AfroChop will collect a 10% commission on all sales made through the AfroChop platform.
+            AfroChop covers Stripe payment-processing fees; they are not deducted again from your share.
+            Any separately disclosed customer marketplace fee is not part of your quoted sale.
+            Refunds, disputes and transfer reversals can affect the final payout.
+          </Text>
+          <Text style={styles.fieldLabel}>When you get paid</Text>
+          <Text style={styles.helper}>
+            The customer pays the full quote at checkout. Your share is released to your
+            connected Stripe account after you mark the service complete and the customer confirms receipt.
+            Open refund reviews or unresolved disputes can delay release. Stripe manages bank
+            payout timing; a transfer does not mean the money has reached your bank.
           </Text>
           <Text style={styles.helper}>
             Stripe identity checks and payout-account setup are managed separately in Payment setup.
           </Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setActivePage('payments')}
+            style={styles.primaryButton}
+          >
+            <Text style={styles.primaryText}>Manage payout setup</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            disabled={isLoading}
+            onPress={() => void refresh()}
+            style={[styles.secondaryButton, isLoading && styles.disabled]}
+          >
+            <Text style={styles.secondaryText}>Refresh commission rate</Text>
+          </Pressable>
         </View>
       ) : null}
 
       {activePage === 'profile' ? (
       <>
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>Cook application and home visit</Text>
+        {application?.status === 'profile_setup' ? (
+          <Text style={styles.helper}>
+            Your profile is live and customers can discover you. Keep updating your profile and sharing new photos and videos to market your food.
+          </Text>
+        ) : application?.status === 'submitted' ? (
+          <Text style={styles.helper}>
+            Application received. Your profile is private while AfroChop arranges a visit to interview you and help set up your profile.
+          </Text>
+        ) : application?.status === 'visit_scheduled' ? (
+          <Text style={styles.helper}>
+            Your home visit is scheduled
+            {application.visitScheduledAt ? ` for ${new Date(application.visitScheduledAt).toLocaleString()}` : ''}.
+            Your profile will stay private until the visit, interview, and profile setup are complete.
+          </Text>
+        ) : application?.status === 'interviewed' ? (
+          <Text style={styles.helper}>
+            Your interview is complete. AfroChop is setting up your profile; it will become visible to customers when setup is finished.
+          </Text>
+        ) : (
+          <>
+            {application?.status === 'rejected' ? (
+              <Text style={styles.helper}>
+                Your previous application was not approved. Update your visit address below to submit a new application.
+              </Text>
+            ) : (
+              <Text style={styles.helper}>
+                Apply to join AfroChop. An authorised team member will visit this address to interview you and help set up your profile.
+                Your exact address is encrypted and only shared with authorised staff for arranging the visit.
+              </Text>
+            )}
+            <TextInput
+              accessibilityLabel="Visit street address"
+              placeholder="Street address"
+              value={applicationAddressLine1}
+              onChangeText={setApplicationAddressLine1}
+              maxLength={200}
+              style={styles.input}
+            />
+            <TextInput
+              accessibilityLabel="Visit apartment, suite or unit"
+              placeholder="Apartment, suite or unit (optional)"
+              value={applicationAddressLine2}
+              onChangeText={setApplicationAddressLine2}
+              maxLength={200}
+              style={styles.input}
+            />
+            <TextInput
+              accessibilityLabel="Visit city"
+              placeholder="City"
+              value={applicationAddressCity}
+              onChangeText={setApplicationAddressCity}
+              maxLength={100}
+              style={styles.input}
+            />
+            <TextInput
+              accessibilityLabel="Visit state, province or region"
+              placeholder="State, province or region"
+              value={applicationAddressRegion}
+              onChangeText={setApplicationAddressRegion}
+              maxLength={100}
+              style={styles.input}
+            />
+            <TextInput
+              accessibilityLabel="Visit postal or ZIP code"
+              placeholder="Postal or ZIP code"
+              value={applicationAddressPostalCode}
+              onChangeText={setApplicationAddressPostalCode}
+              maxLength={32}
+              style={styles.input}
+            />
+            <TextInput
+              accessibilityLabel="Visit country code"
+              placeholder="Country code (2 letters)"
+              autoCapitalize="characters"
+              value={applicationAddressCountryCode}
+              onChangeText={setApplicationAddressCountryCode}
+              maxLength={2}
+              style={styles.input}
+            />
+            <Pressable
+              accessibilityRole="button"
+              disabled={isSaving}
+              onPress={() => void submitApplication()}
+              style={[styles.primaryButton, isSaving && styles.disabled]}
+            >
+              <Text style={styles.primaryText}>{isSaving ? 'Submitting…' : 'Submit cook application'}</Text>
+            </Pressable>
+          </>
+        )}
+      </View>
       <SellerPhotos apiBaseUrl={apiBaseUrl} token={token}
-        profileImageUrl={profileImageUrl || null} onProfileChanged={setProfileImageUrl} />
+        profileImageUrl={profileImageUrl || null} onProfileChanged={setProfileImageUrl}
+        isProfilePublished={application?.status === 'profile_setup'} />
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Profile details</Text>
-        <Text style={styles.helper}>These details help customers understand your cooking and find your services.</Text>
+        <Text style={styles.helper}>
+          {application?.status === 'profile_setup'
+            ? 'Update your public details at any time. Changes are saved to the profile customers see.'
+            : 'Build your profile draft. It will become visible to customers after the AfroChop visit and profile setup.'}
+        </Text>
         <TextInput
           accessibilityLabel="Public cook or business name"
           placeholder="Public cook or business name"
@@ -848,7 +1065,9 @@ export function ChefWorkspace({
           onPress={() => void saveProfile()}
           style={[styles.primaryButton, isSaving && styles.disabled]}
         >
-          <Text style={styles.primaryText}>{isSaving ? 'Saving…' : 'Save public profile'}</Text>
+          <Text style={styles.primaryText}>
+            {isSaving ? 'Saving…' : application?.status === 'profile_setup' ? 'Save public profile' : 'Save profile draft'}
+          </Text>
         </Pressable>
       </View>
       <View style={styles.card}>
@@ -1369,6 +1588,22 @@ export function ChefWorkspace({
 }
 
 const styles = StyleSheet.create({
+  commissionExample: {
+    backgroundColor: '#F8EEDD',
+    borderRadius: 16,
+    padding: 16,
+    gap: 12,
+  },
+  commissionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+  },
+  commissionLabel: { color: '#3A2E22', fontSize: 14, flexShrink: 1 },
+  commissionAmount: { color: '#185A43', fontSize: 16, fontWeight: '800' },
+  commissionTotal: { borderTopWidth: 1, borderTopColor: '#D7C8AE', paddingTop: 12 },
   content: {
     paddingHorizontal: 18,
     paddingTop: 54,

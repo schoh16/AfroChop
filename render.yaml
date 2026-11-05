@@ -17,10 +17,34 @@ services:
         fromDatabase:
           name: afrochop-db
           property: connectionString
-      - key: JWT_SECRET
-        generateValue: true
+      - key: COGNITO_USER_POOL_ID
+        sync: false
+      - key: COGNITO_CLIENT_ID
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
       - key: VERIFICATION_ENCRYPTION_KEY
         generateValue: true
+      - key: STAFF_APPLICATION_EMAILS
+        sync: false
+      - key: STAFF_APPLICATION_SMS_NUMBERS
+        sync: false
+      - key: STAFF_ALERTS_FROM_EMAIL
+        sync: false
+      - key: AWS_REGION
+        value: us-east-2
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_SESSION_TOKEN
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_MESSAGING_SERVICE_SID
+        sync: false
 
 databases:
   - name: afrochop-db

@@ -41,12 +41,17 @@ function build(
   const config = { get: vi.fn() };
   const money = {
     assertLivePaymentsAllowed: vi.fn(),
-    prepareCheckout: vi.fn().mockResolvedValue({ id: 'p1', grossCents: 45000, platformFeeCents: 4500 }),
+    prepareCheckout: vi.fn().mockResolvedValue({
+      id: 'p1',
+      currency: 'usd',
+      grossCents: 45000,
+      platformFeeCents: 4500,
+    }),
     capture: vi.fn().mockResolvedValue({ paid: true, status: 'confirmed' }),
     handleEvent: vi.fn().mockResolvedValue(false),
   };
   const service = new PaymentsService(prisma as never, config as never, stripe as never, money as never);
-  return { service, prisma, stripe, transaction };
+  return { service, prisma, stripe, transaction, money };
 }
 
 const accepted = {
@@ -54,6 +59,7 @@ const accepted = {
   status: 'accepted',
   amount: 450,
   downPaymentPercent: 50,
+  chef: { countryCode: 'US' },
   bookingRequest: {
     id: 'b1',
     status: 'awaiting_payment',
@@ -69,13 +75,33 @@ const acceptedWithSession = {
 
 describe('deposit checkout', () => {
   it('charges the full quote amount', async () => {
-    const { service, stripe, prisma } = build(accepted);
+    const { service, stripe, prisma, money } = build(accepted);
     await service.createDepositCheckout('c1', 'q1');
     const args = stripe.checkout.sessions.create.mock.calls[0][0];
     expect(args.line_items[0].price_data.unit_amount).toBe(45000);
+    expect(args.line_items[0].price_data.currency).toBe('usd');
     expect(args.metadata.platformFeeCents).toBe('4500');
     expect(args.expires_at).toBeGreaterThan(Math.floor(Date.now() / 1000));
+    expect(money.prepareCheckout).toHaveBeenCalledWith('b1', 45000, 1000, 0, 'usd');
     expect(prisma.$transaction).toHaveBeenCalled();
+  });
+
+  it('uses the chef market currency when creating checkout', async () => {
+    const euroQuote = {
+      ...accepted,
+      chef: { countryCode: 'FR' },
+    };
+    const checkout = build(euroQuote);
+    checkout.money.prepareCheckout.mockResolvedValue({
+      id: 'p1',
+      currency: 'eur',
+      grossCents: 45000,
+      platformFeeCents: 4500,
+    });
+    await checkout.service.createDepositCheckout('c1', 'q1');
+    const args = checkout.stripe.checkout.sessions.create.mock.calls[0][0];
+    expect(args.line_items[0].price_data.currency).toBe('eur');
+    expect(checkout.money.prepareCheckout).toHaveBeenCalledWith('b1', 45000, 1000, 0, 'eur');
   });
 
   it('rejects quotes the customer does not own', async () => {

@@ -1,9 +1,11 @@
+import { authenticatedFetch as fetch } from '../lib/session';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { MessagePartner } from './Messaging';
 import { ReviewForm } from './Reviews';
 import { BookingPaymentStatus } from './BookingPaymentStatus';
 import { AccountVerification } from './AccountVerification';
+import { currencyForCountry, formatCurrency } from '../lib/currency';
 
 type Quote = {
   id: string;
@@ -11,7 +13,7 @@ type Quote = {
   amount: string | number;
   downPaymentPercent: number;
   notes: string | null;
-  chef: { id: string; userId: string; displayName: string };
+  chef: { id: string; userId: string; displayName: string; countryCode?: string | null };
 };
 
 type CustomerRequest = {
@@ -238,14 +240,19 @@ export function CustomerRequests({ token, apiBaseUrl, onBack, onMessage }: Props
                   {request.notes ? <Text style={styles.detail}>Your request: {request.notes}</Text> : null}
                   {request.quotes.map((quote) => {
                     const amount = Number(quote.amount);
+                    const currencyCode = currencyForCountry(quote.chef.countryCode);
+                    const customerFeeAmount = customerFeeBps !== null
+                      ? Math.round(amount * customerFeeBps / 100) / 100
+                      : 0;
+                    const totalAmount = amount + customerFeeAmount;
                     return (
                       <View key={quote.id} style={styles.quote}>
                         <Text style={styles.detail}>Quote from {quote.chef.displayName}</Text>
-                        <Text style={styles.amount}>${amount.toFixed(2)}</Text>
+                        <Text style={styles.amount}>{formatCurrency(amount, currencyCode)}</Text>
                         {customerFeeBps !== null ? (
                           <Text style={styles.detail}>
-                            Marketplace fee: ${(Math.round(amount * customerFeeBps / 100) / 100).toFixed(2)}.
-                            {' '}Total: ${(amount + Math.round(amount * customerFeeBps / 100) / 100).toFixed(2)} USD.
+                            Marketplace fee: {formatCurrency(customerFeeAmount, currencyCode)}.
+                            {' '}Total: {formatCurrency(totalAmount, currencyCode)}.
                             Checkout shows the final snapshotted total before you pay.
                           </Text>
                         ) : null}

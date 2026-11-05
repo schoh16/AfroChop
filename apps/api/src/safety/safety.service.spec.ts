@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import {
+  ChefApplicationStatus,
   ChefVerificationStatus,
   UserRole,
   UserVerificationType,
@@ -9,12 +10,14 @@ import {
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SafetyService } from './safety.service.js';
+import { StaffApplicationNotificationService } from '../notifications/staff-application-notification.service.js';
 
 describe('SafetyService verification workflow', () => {
   const transaction = {
     user: { update: vi.fn() },
     userVerification: { upsert: vi.fn() },
     customerServiceAddress: { create: vi.fn(), update: vi.fn() },
+    chefApplication: { create: vi.fn(), update: vi.fn() },
     verificationAuditLog: { create: vi.fn() },
     chefCredential: { update: vi.fn() },
     chefServiceApproval: { upsert: vi.fn() },
@@ -32,6 +35,7 @@ describe('SafetyService verification workflow', () => {
     },
     customerServiceAddress: { create: vi.fn(), findUnique: vi.fn() },
     chefProfile: { findUnique: vi.fn() },
+    chefApplication: { findMany: vi.fn(), findUnique: vi.fn() },
     chefCredential: { create: vi.fn(), findUnique: vi.fn(), findMany: vi.fn() },
     chefPermit: { findMany: vi.fn(), findUnique: vi.fn() },
     chefServiceApproval: { findMany: vi.fn(), findUnique: vi.fn() },
@@ -47,6 +51,9 @@ describe('SafetyService verification workflow', () => {
         ? Buffer.from('12345678901234567890123456789012').toString('base64')
         : undefined,
     ),
+  };
+  const staffNotifications = {
+    notifySubmitted: vi.fn().mockResolvedValue(undefined),
   };
   let service: SafetyService;
 
@@ -65,6 +72,10 @@ describe('SafetyService verification workflow', () => {
         SafetyService,
         { provide: PrismaService, useValue: prisma },
         { provide: ConfigService, useValue: config },
+        {
+          provide: StaffApplicationNotificationService,
+          useValue: staffNotifications,
+        },
       ],
     }).compile();
     service = module.get(SafetyService);
@@ -114,12 +125,235 @@ describe('SafetyService verification workflow', () => {
       countryCode: 'us',
       jurisdictionCode: 'us-ny',
     });
-
     expect(result.status).toBe(VerificationStatus.pending);
-    const stored = transaction.customerServiceAddress.create.mock.calls[0][0].data;
+    const stored =
+      transaction.customerServiceAddress.create.mock.calls[0][0].data;
     expect(stored.encryptedAddress).not.toContain('123 Main Street');
     expect(stored.addressHash).not.toContain('123 Main Street');
     expect(transaction.verificationAuditLog.create).toHaveBeenCalled();
+  });
+
+  it('encrypts the cook visit address and keeps the profile private after application', async () => {
+    prisma.chefProfile.findUnique.mockResolvedValue({
+      id: 'chef-id',
+      application: null,
+    });
+    transaction.chefApplication.create.mockResolvedValue({
+      id: 'application-id',
+      status: ChefApplicationStatus.submitted,
+      submittedAt: new Date(),
+      visitScheduledAt: null,
+      interviewedAt: null,
+      profileSetupAt: null,
+    });
+
+    const result = await service.submitChefApplication('chef-user-id', {
+      line1: '123 Main Street',
+      city: 'Brooklyn',
+      region: 'NY',
+      postalCode: '11201',
+      countryCode: 'us',
+    });
+
+    expect(result.status).toBe(ChefApplicationStatus.submitted);
+    expect(staffNotifications.notifySubmitted).toHaveBeenCalledWith({
+      id: result.id,
+      submittedAt: result.submittedAt,
+    });
+    expect(prisma.$transaction.mock.invocationCallOrder[0]).toBeLessThan(
+      staffNotifications.notifySubmitted.mock.invocationCallOrder[0],
+    );
+    const stored = transaction.chefApplication.create.mock.calls[0][0].data;
+    expect(stored.encryptedHomeAddress).not.toContain('123 Main Street');
+    expect(stored.encryptedHomeAddress).toMatch(/^v1\./);
+    expect(transaction.chefProfile.update).toHaveBeenCalledWith({
+      where: { id: 'chef-id' },
+      data: { isPublic: false },
+    });
+    expect(transaction.verificationAuditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: 'chef_application_submitted',
+          targetType: 'chef_application',
+        }),
+      }),
+    );
+    prisma.chefApplication.findUnique.mockResolvedValue({
+      id: 'application-id',
+      encryptedHomeAddress: stored.encryptedHomeAddress,
+      chef: { userId: 'chef-user-id' },
+    });
+    await expect(
+      service.getChefApplicationAddress('admin-id', 'application-id'),
+    ).resolves.toMatchObject({
+      line1: '123 Main Street',
+      city: 'Brooklyn',
+      countryCode: 'US',
+    });
+    expect(prisma.verificationAuditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: 'chef_application_address_accessed',
+          targetType: 'chef_application',
+        }),
+      }),
+    );
+  });
+
+  it('does not send duplicate alerts when an existing application is returned', async () => {
+    const application = {
+      id: 'existing-id',
+      status: ChefApplicationStatus.submitted,
+    };
+    prisma.chefProfile.findUnique.mockResolvedValue({
+      id: 'chef-id',
+      application,
+    });
+    await expect(
+      service.submitChefApplication('chef-user-id', {
+        line1: '123 Main Street',
+        city: 'Brooklyn',
+        region: 'NY',
+        postalCode: '11201',
+        countryCode: 'US',
+      }),
+    ).resolves.toEqual(application);
+    expect(staffNotifications.notifySubmitted).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('does not notify staff when the application transaction fails', async () => {
+    prisma.chefProfile.findUnique.mockResolvedValue({
+      id: 'chef-id',
+      application: null,
+    });
+    prisma.$transaction.mockRejectedValueOnce(
+      new Error('Database unavailable'),
+    );
+    await expect(
+      service.submitChefApplication('chef-user-id', {
+        line1: '123 Main Street',
+        city: 'Brooklyn',
+        region: 'NY',
+        postalCode: '11201',
+        countryCode: 'US',
+      }),
+    ).rejects.toThrow('Database unavailable');
+    expect(staffNotifications.notifySubmitted).not.toHaveBeenCalled();
+  });
+
+  it('waits for the transaction to commit before notifying staff', async () => {
+    prisma.chefProfile.findUnique.mockResolvedValue({
+      id: 'chef-id',
+      application: null,
+    });
+    const application = {
+      id: 'application-id',
+      status: ChefApplicationStatus.submitted,
+      submittedAt: new Date(),
+    };
+    let commit: (value: typeof application) => void = () => {
+      throw new Error('Transaction has not started');
+    };
+    prisma.$transaction.mockImplementationOnce(
+      () =>
+        new Promise<typeof application>((resolve) => {
+          commit = resolve;
+        }),
+    );
+    const submission = service.submitChefApplication('chef-user-id', {
+      line1: '123 Main Street',
+      city: 'Brooklyn',
+      region: 'NY',
+      postalCode: '11201',
+      countryCode: 'US',
+    });
+    await vi.waitFor(() => expect(prisma.$transaction).toHaveBeenCalledOnce());
+    expect(staffNotifications.notifySubmitted).not.toHaveBeenCalled();
+    commit(application);
+    await expect(submission).resolves.toEqual(application);
+    expect(staffNotifications.notifySubmitted).toHaveBeenCalledExactlyOnceWith({
+      id: application.id,
+      submittedAt: application.submittedAt,
+    });
+  });
+
+  it('alerts staff again when a rejected application is resubmitted', async () => {
+    prisma.chefProfile.findUnique.mockResolvedValue({
+      id: 'chef-id',
+      application: {
+        id: 'existing-id',
+        status: ChefApplicationStatus.rejected,
+      },
+    });
+    transaction.chefApplication.update.mockResolvedValue({
+      id: 'existing-id',
+      status: ChefApplicationStatus.submitted,
+      submittedAt: new Date(),
+    });
+    const result = await service.submitChefApplication('chef-user-id', {
+      line1: '123 Main Street',
+      city: 'Brooklyn',
+      region: 'NY',
+      postalCode: '11201',
+      countryCode: 'US',
+    });
+    expect(staffNotifications.notifySubmitted).toHaveBeenCalledExactlyOnceWith({
+      id: result.id,
+      submittedAt: result.submittedAt,
+    });
+  });
+
+  it('publishes the profile only after the interview and setup stages', async () => {
+    prisma.chefApplication.findUnique.mockResolvedValue({
+      id: 'application-id',
+      status: ChefApplicationStatus.interviewed,
+      chef: {
+        id: 'chef-id',
+        userId: 'chef-user-id',
+        profileImageUrl: 'https://example.com/photo.jpg',
+        _count: { menuEntries: 1 },
+      },
+    });
+    transaction.chefApplication.update.mockResolvedValue({
+      id: 'application-id',
+      status: ChefApplicationStatus.profile_setup,
+      submittedAt: new Date(),
+      visitScheduledAt: new Date(),
+      interviewedAt: new Date(),
+      profileSetupAt: new Date(),
+    });
+
+    await service.reviewChefApplication('admin-id', 'application-id', {
+      status: ChefApplicationStatus.profile_setup,
+    });
+
+    expect(transaction.chefProfile.update).toHaveBeenCalledWith({
+      where: { id: 'chef-id' },
+      data: { isPublic: true },
+    });
+    expect(transaction.adminAuditLog.create).toHaveBeenCalled();
+    expect(transaction.verificationAuditLog.create).toHaveBeenCalled();
+  });
+
+  it('does not allow staff to publish before a visit and interview', async () => {
+    prisma.chefApplication.findUnique.mockResolvedValue({
+      id: 'application-id',
+      status: ChefApplicationStatus.submitted,
+      chef: {
+        id: 'chef-id',
+        userId: 'chef-user-id',
+        profileImageUrl: 'https://example.com/photo.jpg',
+        _count: { menuEntries: 1 },
+      },
+    });
+
+    await expect(
+      service.reviewChefApplication('admin-id', 'application-id', {
+        status: ChefApplicationStatus.profile_setup,
+      }),
+    ).rejects.toThrow('follow the visit and interview workflow');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it('keeps address verification disabled until an approved provider is configured', async () => {
@@ -135,24 +369,44 @@ describe('SafetyService verification workflow', () => {
 
   it('denies unpaid and nonparticipant access to private booking addresses', async () => {
     prisma.bookingRequest.findUnique.mockResolvedValue({
-      customerId: 'customer-id', chef: { userId: 'chef-id' },
-      status: 'awaiting_payment', depositPaidAt: null, serviceAddress: { encryptedAddress: 'private' },
+      customerId: 'customer-id',
+      chef: { userId: 'chef-id' },
+      status: 'awaiting_payment',
+      depositPaidAt: null,
+      serviceAddress: { encryptedAddress: 'private' },
     });
-    await expect(service.getBookingServiceAddress('chef-id', UserRole.chef, 'b1')).rejects.toThrow('private');
-    await expect(service.getBookingServiceAddress('other-customer', UserRole.customer, 'b1')).rejects.toThrow('private');
+    await expect(
+      service.getBookingServiceAddress('chef-id', UserRole.chef, 'b1'),
+    ).rejects.toThrow('private');
+    await expect(
+      service.getBookingServiceAddress(
+        'other-customer',
+        UserRole.customer,
+        'b1',
+      ),
+    ).rejects.toThrow('private');
     expect(prisma.verificationAuditLog.create).not.toHaveBeenCalled();
   });
 
   it('requires service-address jurisdictions to match the country', async () => {
-    await expect(service.createMyServiceAddress('customer-id', {
-      line1: '123 Main Street', city: 'Brooklyn', region: 'NY', postalCode: '11201',
-      countryCode: 'US', jurisdictionCode: 'CA-ON',
-    })).rejects.toThrow('country code');
+    await expect(
+      service.createMyServiceAddress('customer-id', {
+        line1: '123 Main Street',
+        city: 'Brooklyn',
+        region: 'NY',
+        postalCode: '11201',
+        countryCode: 'US',
+        jurisdictionCode: 'CA-ON',
+      }),
+    ).rejects.toThrow('country code');
     expect(transaction.customerServiceAddress.create).not.toHaveBeenCalled();
   });
 
   it('records administrator verification decisions in the audit log', async () => {
-    prisma.user.findUnique.mockResolvedValue({ id: 'customer-id', role: UserRole.customer });
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'customer-id',
+      role: UserRole.customer,
+    });
     transaction.userVerification.upsert.mockResolvedValue({
       id: 'verification-id',
       type: UserVerificationType.email,
@@ -187,15 +441,23 @@ describe('SafetyService verification workflow', () => {
 
   it('requires provider evidence before an administrator can mark a user verified', async () => {
     await expect(
-      service.reviewUserVerification('admin-id', 'customer-id', UserVerificationType.email, {
-        status: VerificationStatus.verified,
-      }),
+      service.reviewUserVerification(
+        'admin-id',
+        'customer-id',
+        UserVerificationType.email,
+        {
+          status: VerificationStatus.verified,
+        },
+      ),
     ).rejects.toThrow('require a provider and an evidence reference');
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
 
   it('records administrative rejection decisions without exposing sensitive verification data', async () => {
-    prisma.user.findUnique.mockResolvedValue({ id: 'customer-id', role: UserRole.customer });
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'customer-id',
+      role: UserRole.customer,
+    });
     transaction.userVerification.upsert.mockResolvedValue({
       id: 'verification-id',
       type: UserVerificationType.phone,
@@ -209,24 +471,34 @@ describe('SafetyService verification workflow', () => {
       'admin-id',
       'customer-id',
       UserVerificationType.phone,
-      { status: VerificationStatus.rejected, reviewerNotes: 'Unable to verify ownership.' },
+      {
+        status: VerificationStatus.rejected,
+        reviewerNotes: 'Unable to verify ownership.',
+      },
     );
 
     expect(result.status).toBe(VerificationStatus.rejected);
     expect(transaction.verificationAuditLog.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ action: 'user_phone_verification_rejected' }),
+        data: expect.objectContaining({
+          action: 'user_phone_verification_rejected',
+        }),
       }),
     );
   });
 
   it('keeps third-party identity verification disabled until provider review is enabled', async () => {
     await expect(
-      service.reviewUserVerification('admin-id', 'chef-user-id', UserVerificationType.identity, {
-        status: VerificationStatus.verified,
-        provider: 'test-provider',
-        providerReference: 'verification-123',
-      }),
+      service.reviewUserVerification(
+        'admin-id',
+        'chef-user-id',
+        UserVerificationType.identity,
+        {
+          status: VerificationStatus.verified,
+          provider: 'test-provider',
+          providerReference: 'verification-123',
+        },
+      ),
     ).rejects.toThrow('disabled until an approved provider');
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
@@ -244,7 +516,9 @@ describe('SafetyService verification workflow', () => {
       service.updateChefStatus('admin-id', 'chef-id', {
         verificationStatus: ChefVerificationStatus.approved,
       }),
-    ).rejects.toThrow('verified email, verified phone, identity verification, eligible Stripe Connect account');
+    ).rejects.toThrow(
+      'verified email, verified phone, identity verification, eligible Stripe Connect account',
+    );
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 

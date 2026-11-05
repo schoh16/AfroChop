@@ -8,11 +8,11 @@ Privacy contact and address: [COMPLETE]
 
 ## Information handled
 
-AfroChop may process account and contact details, approximate or selected service locations, booking and payment references, messages, provider profiles and verification status, menu ingredients and allergen disclosures, customer dietary/allergy details, grocery receipts, safety reports, and technical/log information. Do not collect more sensitive data than needed for the requested service, compliance, safety, or legal obligations.
+AfroChop may process account and contact details, approximate or selected service locations, cook applications and encrypted home-visit addresses, booking and payment references, messages, provider profiles and verification status, menu ingredients and allergen disclosures, customer dietary/allergy details, grocery receipts, safety reports, and technical/log information. Do not collect more sensitive data than needed for the requested service, compliance, safety, or legal obligations.
 
 ## Purposes and access
 
-Use information to operate accounts and marketplace functions, match and book providers, communicate about requests and quotes, process payment-provider transactions, support customer service, verify provider eligibility, and investigate safety incidents. Allergy and dietary details are sensitive: access is limited to the customer, the assigned cook/provider, and specifically authorized personnel with a service, compliance, support, or safety need. Do not expose them on public profiles or to unrelated providers.
+Use information to operate accounts and marketplace functions, match and book providers, communicate about requests and quotes, process payment-provider transactions, support customer service, verify provider eligibility, and investigate safety incidents. Home-visit addresses are used to arrange and conduct cook application interviews and profile setup; access is limited to specifically authorized staff and access is audited. Allergy and dietary details are sensitive: access is limited to the customer, the assigned cook/provider, and specifically authorized personnel with a service, compliance, support, or safety need. Do not expose them on public profiles or to unrelated providers.
 
 ## Service providers and disclosures
 
@@ -20,7 +20,7 @@ Identify actual hosting, payment, messaging, analytics, storage, and support ven
 
 ## Retention and deletion
 
-Retain booking, message, acknowledgment, provider response, receipt, permit, and incident records under a documented schedule approved by counsel, with legal holds and safety investigation exceptions. The retention period for each record class must be filled in after legal and operational review; do not invent or promise a retention duration before that schedule exists. Provide account and rights-request deletion workflows subject to lawful exceptions.
+Retain cook applications and home-visit addresses, booking, message, acknowledgment, provider response, receipt, permit, and incident records under a documented schedule approved by counsel, with legal holds and safety investigation exceptions. The retention period for each record class must be filled in after legal and operational review; do not invent or promise a retention duration before that schedule exists. Provide account and rights-request deletion workflows subject to lawful exceptions.
 
 ## Security
 

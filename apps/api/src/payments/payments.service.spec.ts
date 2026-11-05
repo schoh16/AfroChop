@@ -246,7 +246,7 @@ describe('PaymentsService Connect onboarding and configuration', () => {
   it('provides the customer marketplace fee but not chef commission in the public configuration', async () => {
     prisma.paymentConfiguration.findUnique.mockResolvedValue({
       id: 'default',
-      chefCommissionBps: 1500,
+      chefCommissionBps: 1000,
       customerMarketplaceFeeBps: 250,
       updatedAt: new Date(),
     });
@@ -281,14 +281,14 @@ describe('PaymentsService Connect onboarding and configuration', () => {
   it('audits administrator changes to commission and customer fee settings', async () => {
     transaction.paymentConfiguration.upsert.mockResolvedValue({
       id: 'default',
-      chefCommissionBps: 1500,
+      chefCommissionBps: 1000,
       customerMarketplaceFeeBps: 300,
       updatedAt: new Date(),
     });
     transaction.adminAuditLog.create.mockResolvedValue({});
 
     await service.updatePaymentConfiguration('admin-id', {
-      chefCommissionBps: 1500,
+      chefCommissionBps: 1000,
       customerMarketplaceFeeBps: 300,
     });
 
@@ -298,7 +298,7 @@ describe('PaymentsService Connect onboarding and configuration', () => {
         action: 'payment_configuration_updated',
         targetType: 'payment_configuration',
         details: {
-          chefCommissionBps: 1500,
+          chefCommissionBps: 1000,
           customerMarketplaceFeeBps: 300,
         },
       }),

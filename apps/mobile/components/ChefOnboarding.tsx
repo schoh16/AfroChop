@@ -27,6 +27,12 @@ export function ChefOnboarding({ apiBaseUrl, countries, onBack, onPasswordSignIn
   const [custom, setCustom] = useState('');
   const [countryId, setCountryId] = useState<string>();
   const [photo, setPhoto] = useState<string | null>(null);
+  const [addressLine1, setAddressLine1] = useState('');
+  const [addressLine2, setAddressLine2] = useState('');
+  const [addressCity, setAddressCity] = useState('');
+  const [addressRegion, setAddressRegion] = useState('');
+  const [addressPostalCode, setAddressPostalCode] = useState('');
+  const [addressCountryCode, setAddressCountryCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [foodsLoading, setFoodsLoading] = useState(true);
@@ -53,16 +59,36 @@ export function ChefOnboarding({ apiBaseUrl, countries, onBack, onPasswordSignIn
       method: 'POST', body: JSON.stringify({ name: name.trim(), email: email.trim(), code: code.trim() }),
     });
     setSession(auth);
-    const me = await marketplaceApi(apiBaseUrl, auth.token)<{ onboardingComplete: boolean }>('/auth/me');
-    if (me.onboardingComplete) { await onComplete(auth); return; }
+    const application = await marketplaceApi(apiBaseUrl, auth.token)<
+      { status: string } | null
+    >('/chefs/me/application');
+    if (application && application.status !== 'rejected') {
+      await onComplete(auth);
+      return;
+    }
     setStep(2);
   }
 
   async function finish() {
     if (!session || !photo || !selected.length) throw new Error('Select your foods and add a photo first.');
+    if (!addressLine1.trim() || !addressCity.trim() || !addressRegion.trim() ||
+        !addressPostalCode.trim() || !/^[A-Za-z]{2}$/.test(addressCountryCode.trim())) {
+      throw new Error('Enter your complete visit address, including a two-letter country code.');
+    }
     const request = marketplaceApi(apiBaseUrl, session.token);
     await request('/chefs/me/onboarding', { method: 'POST', body: JSON.stringify({ foods: selected }) });
     await uploadProfilePhoto(apiBaseUrl, session.token, photo);
+    await request('/chefs/me/application', {
+      method: 'POST',
+      body: JSON.stringify({
+        line1: addressLine1.trim(),
+        line2: addressLine2.trim() || undefined,
+        city: addressCity.trim(),
+        region: addressRegion.trim(),
+        postalCode: addressPostalCode.trim(),
+        countryCode: addressCountryCode.trim().toUpperCase(),
+      }),
+    });
     await onComplete(session);
   }
 
@@ -72,8 +98,10 @@ export function ChefOnboarding({ apiBaseUrl, countries, onBack, onPasswordSignIn
         <Text style={s.link}>Back</Text>
       </Pressable>
       <AfroChopLogo />
-      <Text style={s.progress}>Step {step} of 3</Text>
-      <Text style={s.title}>{step === 1 ? 'Become a Chef' : step === 2 ? 'What Do You Cook?' : 'Add Your Photo'}</Text>
+      <Text style={s.progress}>Step {step} of 4</Text>
+      <Text style={s.title}>
+        {step === 1 ? 'Become a Chef' : step === 2 ? 'What Do You Cook?' : step === 3 ? 'Add Your Photo' : 'Request a Home Visit'}
+      </Text>
       {step === 1 ? <>
         <Text style={s.text}>New here or returning? We will email you a secure sign-in code.</Text>
         <AuthInput label="Full name" value={name} onChangeText={setName} editable={!codeSent} autoComplete="name" />
@@ -130,14 +158,30 @@ export function ChefOnboarding({ apiBaseUrl, countries, onBack, onPasswordSignIn
           <Text style={s.link}>{food.name} - Remove</Text>
         </Pressable>)}
         <PrimaryButton label="Continue" disabled={!selected.length || selected.length > 50} onPress={() => setStep(3)} />
-      </> : <>
-        <Text style={s.text}>Let customers recognize you. Your photo will be public.</Text>
+      </> : step === 3 ? <>
+        <Text style={s.text}>Add a photo for the profile AfroChop will help set up during your home visit. It will be shown to customers after setup.</Text>
         {photo ? <Image accessibilityLabel="Profile photo preview" source={{ uri: photo }} style={s.photo} /> : null}
         <PrimaryButton label={photo ? 'Change Photo' : 'Choose Photo'} secondary disabled={busy}
           onPress={() => void perform(async () => { const uri = await pickProfilePhoto(); if (uri) setPhoto(uri); })} />
         <Text style={s.caption}>By finishing, you agree to the Terms of Service and Privacy Policy available from the welcome screen.</Text>
-        <PrimaryButton label="Finish and Open My Dashboard" disabled={!photo} loading={busy} onPress={() => void perform(finish)} />
+        <PrimaryButton label="Continue to Visit Details" disabled={!photo} onPress={() => setStep(4)} />
         <Text style={s.text}>No bank details needed now. Required safety checks and payout setup happen before paid orders.</Text>
+      </> : <>
+        <Text style={s.text}>
+          An AfroChop team member will visit this address to interview you and help set up your cook profile.
+          Your exact address is encrypted and only shared with authorised staff for arranging the visit.
+        </Text>
+        <AuthInput label="Street address" value={addressLine1} onChangeText={setAddressLine1} maxLength={200} autoComplete="street-address" />
+        <AuthInput label="Apartment, suite or unit (optional)" value={addressLine2} onChangeText={setAddressLine2} maxLength={200} />
+        <AuthInput label="City" value={addressCity} onChangeText={setAddressCity} maxLength={100} />
+        <AuthInput label="State, province or region" value={addressRegion} onChangeText={setAddressRegion} maxLength={100} />
+        <AuthInput label="Postal or ZIP code" value={addressPostalCode} onChangeText={setAddressPostalCode} maxLength={32} />
+        <AuthInput label="Country code (2 letters)" value={addressCountryCode} onChangeText={setAddressCountryCode}
+          autoCapitalize="characters" maxLength={2} />
+        <PrimaryButton label="Submit Application" loading={busy}
+          disabled={!addressLine1.trim() || !addressCity.trim() || !addressRegion.trim() ||
+            !addressPostalCode.trim() || !/^[A-Za-z]{2}$/.test(addressCountryCode.trim())}
+          onPress={() => void perform(finish)} />
       </>}
       {error ? <Text accessibilityRole="alert" style={s.error}>{error}</Text> : null}
     </View>

@@ -37,10 +37,7 @@ describe('ChefsService profile setup', () => {
     });
     prisma.$transaction.mockResolvedValue([[], 0]);
     const module = await Test.createTestingModule({
-      providers: [
-        ChefsService,
-        { provide: PrismaService, useValue: prisma },
-      ],
+      providers: [ChefsService, { provide: PrismaService, useValue: prisma }],
     }).compile();
     service = module.get(ChefsService);
   });
@@ -60,7 +57,9 @@ describe('ChefsService profile setup', () => {
   });
 
   it('returns the chef profile with its service areas for workspace editing', async () => {
-    prisma.chefProfile.findUnique.mockResolvedValueOnce({ id: 'chef-profile-id' });
+    prisma.chefProfile.findUnique.mockResolvedValueOnce({
+      id: 'chef-profile-id',
+    });
     prisma.chefProfile.findUniqueOrThrow.mockResolvedValue({
       id: 'chef-profile-id',
       displayName: 'Chef Amara',
@@ -112,43 +111,57 @@ describe('ChefsService profile setup', () => {
       }),
     );
     const [searchArguments] = prisma.chefProfile.findMany.mock.calls[0];
-    expect(searchArguments.select.chefDishes.select).not.toHaveProperty('price');
+    expect(searchArguments.select.chefDishes.select).not.toHaveProperty(
+      'price',
+    );
     expect(searchArguments.select).toHaveProperty('menuEntries');
   });
 
-  it('discovers pending and approved public profiles without exposing private identity', async () => {
+  it('discovers only profiles published after application setup without exposing private identity', async () => {
     await service.search({});
     const [args] = prisma.chefProfile.findMany.mock.calls[0];
     expect(args.where).toMatchObject({
       isPublic: true,
       verificationStatus: { in: ['pending', 'approved'] },
+      application: { status: 'profile_setup' },
       user: { isActive: true },
     });
     expect(args.select).not.toHaveProperty('user');
     expect(args.select).not.toHaveProperty('email');
-    expect(prisma.chefProfile.count).toHaveBeenCalledWith({ where: args.where });
+    expect(prisma.chefProfile.count).toHaveBeenCalledWith({
+      where: args.where,
+    });
   });
 
   it('uses the same visibility rules on direct profile links', async () => {
     prisma.chefProfile.findFirst.mockResolvedValue({ id: 'pending-chef' });
     await service.getPublicProfile('pending-chef');
-    expect(prisma.chefProfile.findFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: {
-        id: 'pending-chef', isPublic: true,
-        verificationStatus: { in: ['pending', 'approved'] },
-        user: { isActive: true },
-      },
-    }));
+    expect(prisma.chefProfile.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: 'pending-chef',
+          isPublic: true,
+          verificationStatus: { in: ['pending', 'approved'] },
+          application: { status: 'profile_setup' },
+          user: { isActive: true },
+        },
+      }),
+    );
   });
 
   it('does not return a profile excluded by the public visibility filter', async () => {
     prisma.chefProfile.findFirst.mockResolvedValue(null);
-    await expect(service.getPublicProfile('hidden-chef')).rejects.toThrow('Chef profile not found.');
+    await expect(service.getPublicProfile('hidden-chef')).rejects.toThrow(
+      'Chef profile not found.',
+    );
   });
 
   it('creates a chef-owned menu entry without exposing or accepting a price', async () => {
     prisma.chefProfile.findUnique.mockResolvedValue({ id: 'chef-profile-id' });
-    prisma.chefMenuEntry.create.mockResolvedValue({ id: 'entry-id', name: 'Jollof rice' });
+    prisma.chefMenuEntry.create.mockResolvedValue({
+      id: 'entry-id',
+      name: 'Jollof rice',
+    });
 
     await service.createMenuEntry('chef-user-id', {
       name: ' Jollof rice ',
@@ -166,7 +179,9 @@ describe('ChefsService profile setup', () => {
         }),
       }),
     );
-    expect(prisma.chefMenuEntry.create.mock.calls[0][0].data).not.toHaveProperty('price');
+    expect(
+      prisma.chefMenuEntry.create.mock.calls[0][0].data,
+    ).not.toHaveProperty('price');
   });
 
   it('rejects a menu template containing another chef’s menu item', async () => {

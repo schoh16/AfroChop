@@ -64,6 +64,14 @@ enum ChefVerificationStatus {
   suspended
 }
 
+enum ChefApplicationStatus {
+  submitted
+  visit_scheduled
+  interviewed
+  profile_setup
+  rejected
+}
+
 enum AllergyReviewStatus {
   not_required
   pending
@@ -157,7 +165,8 @@ model User {
   id                               String    @id @default(uuid()) @db.Uuid
   name                             String
   email                            String    @unique
-  passwordHash                     String
+  passwordHash                     String?
+  cognitoSub                       String?   @unique
   role                             UserRole  @default(customer)
   roleSelectedAt                   DateTime?
   isActive                         Boolean   @default(true)
@@ -173,38 +182,38 @@ model User {
   createdAt                        DateTime  @default(now())
   updatedAt                        DateTime  @updatedAt
 
-  chefProfile           ChefProfile?
-  farmerProfile         FarmerProfile?
-  farmInquiries         FarmInquiry[]            @relation("CustomerFarmInquiries")
-  customerBookings      BookingRequest[]         @relation("CustomerBookings")
-  sentMessages          Message[]                @relation("SentMessages")
-  receivedMessages      Message[]                @relation("ReceivedMessages")
-  safetyIncidents       SafetyIncident[]         @relation("IncidentReporter")
-  adminAuditLogs        AdminAuditLog[]          @relation("AdminActions")
-  reviewsGiven          Review[]                 @relation("CustomerReviews")
-  reviewReports         ReviewReport[]
-  verifications         UserVerification[]
+  chefProfile            ChefProfile?
+  farmerProfile          FarmerProfile?
+  farmInquiries          FarmInquiry[]            @relation("CustomerFarmInquiries")
+  customerBookings       BookingRequest[]         @relation("CustomerBookings")
+  sentMessages           Message[]                @relation("SentMessages")
+  receivedMessages       Message[]                @relation("ReceivedMessages")
+  safetyIncidents        SafetyIncident[]         @relation("IncidentReporter")
+  adminAuditLogs         AdminAuditLog[]          @relation("AdminActions")
+  reviewsGiven           Review[]                 @relation("CustomerReviews")
+  reviewReports          ReviewReport[]
+  verifications          UserVerification[]
   verificationChallenges VerificationChallenge[]
-  verificationDocuments VerificationDocument[]
-  verificationAuditLogs VerificationAuditLog[]   @relation("VerificationAuditActor")
-  verificationReviews   VerificationAuditLog[]   @relation("VerificationAuditSubject")
-  reportedIncidents     SafetyIncident[]         @relation("ReportedUserIncidents")
-  serviceAddresses      CustomerServiceAddress[]
+  verificationDocuments  VerificationDocument[]
+  verificationAuditLogs  VerificationAuditLog[]   @relation("VerificationAuditActor")
+  verificationReviews    VerificationAuditLog[]   @relation("VerificationAuditSubject")
+  reportedIncidents      SafetyIncident[]         @relation("ReportedUserIncidents")
+  serviceAddresses       CustomerServiceAddress[]
 
   @@map("users")
 }
 
 model ChefEmailCode {
-  email         String   @id
-  codeHash      String
-  name          String?
-  expiresAt     DateTime
-  attempts      Int      @default(0)
-  consumedAt    DateTime?
-  deliveredAt   DateTime?
-  lastSentAt    DateTime
-  windowStart   DateTime
-  sendCount     Int      @default(1)
+  email       String    @id
+  codeHash    String
+  name        String?
+  expiresAt   DateTime
+  attempts    Int       @default(0)
+  consumedAt  DateTime?
+  deliveredAt DateTime?
+  lastSentAt  DateTime
+  windowStart DateTime
+  sendCount   Int       @default(1)
 
   @@index([expiresAt])
   @@map("chef_email_codes")
@@ -302,6 +311,7 @@ model ChefProfile {
   serviceApprovals       ChefServiceApproval[]
   backgroundScreenings   BackgroundScreeningRecord[]
   verificationDocuments  VerificationDocument[]
+  application            ChefApplication?
   safetyIncidents        SafetyIncident[]
   reviews                Review[]
   reviewResponses        ChefReviewResponse[]
@@ -309,6 +319,25 @@ model ChefProfile {
   stripeConnectedAccount StripeConnectedAccount?
 
   @@map("chef_profiles")
+}
+
+model ChefApplication {
+  id                   String                @id @default(uuid()) @db.Uuid
+  chefId               String                @unique @db.Uuid
+  encryptedHomeAddress String
+  status               ChefApplicationStatus @default(submitted)
+  submittedAt          DateTime              @default(now())
+  visitScheduledAt     DateTime?
+  interviewedAt        DateTime?
+  profileSetupAt       DateTime?
+  adminNotes           String?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  chef ChefProfile @relation(fields: [chefId], references: [id], onDelete: Cascade)
+
+  @@index([status, submittedAt])
+  @@map("chef_applications")
 }
 
 model ChefFoodPhoto {
@@ -520,12 +549,12 @@ model GroceryReceipt {
 }
 
 model Message {
-  id          String   @id @default(uuid()) @db.Uuid
-  senderId    String   @db.Uuid
-  recipientId String   @db.Uuid
+  id          String    @id @default(uuid()) @db.Uuid
+  senderId    String    @db.Uuid
+  recipientId String    @db.Uuid
   content     String
   readAt      DateTime?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
 
   sender    User @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
   recipient User @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: Cascade)
@@ -859,8 +888,8 @@ model BookingPayment {
   destinationAccountId  String
   currency              String              @default("usd")
   quoteCents            Int
-  customerFeeCents       Int
-  platformFeeCents       Int
+  customerFeeCents      Int
+  platformFeeCents      Int
   grossCents            Int
   chefCents             Int
   refundedCents         Int                 @default(0)
@@ -873,7 +902,7 @@ model BookingPayment {
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
 
-  booking BookingRequest     @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  booking BookingRequest       @relation(fields: [bookingId], references: [id], onDelete: Restrict)
   refund  BookingRefund?
   entries PaymentLedgerEntry[]
 
@@ -899,13 +928,13 @@ model BookingRefund {
 }
 
 model PaymentLedgerEntry {
-  id           String   @id @default(uuid()) @db.Uuid
-  paymentId    String   @db.Uuid
-  externalId   String   @unique
-  kind         String
-  amountCents  Int
-  currency     String
-  createdAt    DateTime @default(now())
+  id          String   @id @default(uuid()) @db.Uuid
+  paymentId   String   @db.Uuid
+  externalId  String   @unique
+  kind        String
+  amountCents Int
+  currency    String
+  createdAt   DateTime @default(now())
 
   payment BookingPayment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
 
@@ -1030,12 +1059,12 @@ model FarmerProfile {
 }
 
 model FarmerPhoto {
-  id        String   @id @default(uuid()) @db.Uuid
-  farmerId  String   @db.Uuid
+  id        String        @id @default(uuid()) @db.Uuid
+  farmerId  String        @db.Uuid
   imageUrl  String
   mediaType ChefMediaType @default(image)
   caption   String?
-  createdAt DateTime @default(now())
+  createdAt DateTime      @default(now())
 
   farmer FarmerProfile @relation(fields: [farmerId], references: [id], onDelete: Cascade)
 

@@ -46,18 +46,13 @@ npm install
 copy .env.example .env
 ```
 
-Generate a unique JWT signing secret and set it in `.env` before starting the API. The API refuses to start without a secret of at least 32 bytes:
+Configure `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, and `CORS_ORIGINS` as
+described in [Cognito authentication](#cognito-authentication). Sign-in fails
+explicitly until the pool and client are configured; legacy JWTs are no longer
+accepted. No AWS IAM users or access keys are issued to app users.
 
-```powershell
-$JwtSecret = node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64'))"
-if ($LASTEXITCODE -ne 0 -or -not $JwtSecret) { throw "Could not generate JWT_SECRET." }
-(Get-Content .env) -replace '^JWT_SECRET=.*$', "JWT_SECRET=$JwtSecret" |
-  Set-Content .env -Encoding ascii
-```
-
-Do not reuse or commit this secret. Changing it invalidates existing sign-in tokens.
-
-Phone numbers are collected during registration and encrypted before storage. Generate and keep a separate 32-byte encryption key in the root `.env`:
+Phone numbers added through verification are encrypted before storage. Generate
+and keep a separate 32-byte encryption key in the root `.env`:
 
 ```powershell
 $VerificationKey = node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64'))"
@@ -66,7 +61,9 @@ if ($LASTEXITCODE -ne 0 -or -not $VerificationKey) { throw "Could not generate V
   Set-Content .env -Encoding ascii
 ```
 
-Keep this key stable and backed up securely; losing or rotating it makes previously saved phone numbers unreadable. Registration is rejected before creating an account if the key is missing or invalid.
+Keep this key stable and backed up securely; losing or rotating it makes previously
+saved phone numbers unreadable. Cognito registration itself does not require phone
+storage or phone verification.
 
 3. Start the Docker services:
 
@@ -96,6 +93,103 @@ npm --workspace @afrochef/mobile run start
 ```
 
 For Android emulators, set `EXPO_PUBLIC_API_URL=http://10.0.2.2:3000/api` in the app environment. iOS simulators can use `http://localhost:3000/api`; physical devices need the development computer's LAN IP address. See [Physical-device testing](#physical-device-testing-on-windows) for the Windows setup.
+
+## Cognito authentication
+
+Authentication is managed by Amazon Cognito User Pools, not AWS IAM or the local
+password hashes. The API proxies Cognito authentication over HTTPS, verifies access
+tokens against the pool's signing keys, issuer, app-client ID and access-token use,
+and calls `GetUser` to reject revoked sessions. Marketplace permissions always come
+from the current database role and active-account state, not client-supplied claims.
+An outage of Cognito fails closed with an explicit error. Cognito email ownership
+does not automatically complete the separate marketplace verification checklist.
+
+### AWS setup (required before rollout)
+
+Use the CloudFormation console to deploy [infra/cognito.yaml](infra/cognito.yaml)
+in your chosen AWS region, with a different stack per environment. This template
+creates resources and may incur AWS charges; it is not deployed automatically.
+Copy its `UserPoolId` and `ClientId` outputs into the API environment:
+
+```text
+COGNITO_USER_POOL_ID=us-east-2_yourPoolId
+COGNITO_CLIENT_ID=yourAppClientId
+CORS_ORIGINS=https://app.your-domain.example
+```
+
+The client has **no secret**, enables `ALLOW_USER_PASSWORD_AUTH`, revocation and
+refresh-token rotation (60-second retry grace), uses 15-minute access tokens and
+30-day refresh sessions, and does not remember devices. Do not enable MFA, passkeys,
+federated login or device remembering on this app client until corresponding UI
+challenge handling is added. The initial integration supports email/password,
+email confirmation and email-code password recovery only. IAM signing credentials
+are not needed by these Cognito runtime operations. Do not change the pool for an
+existing environment: stored subjects are scoped to that configured pool.
+
+The template's default Cognito email delivery has restrictive daily quotas.
+Configure production SES email delivery, a verified sender/domain and production
+sending access in Cognito before launch. Test confirmation and recovery delivery.
+Review Cognito quotas, pricing, abuse protection and alarm configuration before
+public launch. The pool is retained and deletion-protected.
+
+### Persistent sessions and browser deployment
+
+- iOS/Android: only the refresh token is persisted in Expo SecureStore. Access
+  tokens and profile data stay in memory and are restored by refreshing on startup.
+- Web: the refresh token is an HttpOnly, SameSite=Lax cookie scoped to `/api/auth`.
+  Production sets Secure. Access tokens stay in memory: **no passwords or bearer
+  tokens in localStorage**. Browser fetches include credentials, and session
+  endpoints validate an exact `CORS_ORIGINS` origin and client header.
+- Serve production web and API over HTTPS on the **same site**, for example
+  `app.example.com` and `api.example.com`, or reverse-proxy `/api` on the app host.
+  An unrelated web host and `onrender.com` API are cross-site and will not persist
+  this cookie. Configure custom domains/proxy before enabling browser sign-in.
+  Locally, use `localhost` for both browser app and API, not localhost plus a LAN
+  IP. Set the mobile app's `EXPO_PUBLIC_API_URL` accordingly.
+- Requests across bookings, payments, messaging, verification, reviews and seller
+  uploads obtain renewed access tokens automatically. Concurrent refreshes within
+  an app instance are coalesced. The session expires 30 days after the original
+  login; rotation does not extend that lifetime.
+- Sign-out revokes Cognito sessions (all devices when a valid access token is
+  available), clears the cookie/device refresh token, and clears in-memory access.
+  Passwords are never stored on the device. Network failures are surfaced so
+  users can retry rather than being told remote revocation succeeded.
+
+### Existing account migration
+
+Back up the database, deploy the API migration and the new app together, and
+configure Cognito before distributing the release. Old app clients and old JWT
+sessions are intentionally incompatible with this cutover; users sign in again.
+
+1. Select **Create / Migrate Account** with the **same email** as the old account
+   and choose a new password. The old password is not imported.
+2. Enter the email confirmation code, then sign in with the new password.
+3. Only after Cognito verifies email ownership does the API atomically bind the
+   immutable Cognito subject to the existing local user. IDs, seller profiles,
+   roles, bookings, payouts and media stay unchanged. The old bcrypt hash is
+   cleared on linking; new users never have a local password hash.
+4. If an account is already registered but unconfirmed, use **Verify Email /
+   Resend Confirmation Code**. If the password was forgotten or someone started
+   registration for that email, confirm email ownership and use **Forgot
+   Password?** to choose your own password. Unmigrated accounts must register and
+   confirm before Cognito recovery can send a reset code.
+
+Inactive accounts and conflicting existing identity links are rejected.
+**Administrator accounts are never automatically linked by email.** An operator
+must independently verify ownership, create/confirm the Cognito identity, and
+explicitly assign its subject to the existing admin record through an audited
+database operation. Do not promote public sign-ups to admin. Seeded demo users
+are local data only; their sample passwords no longer authenticate. Use a
+deliverable email and this migration process for test accounts.
+
+Authentication API:
+`POST /api/auth/register`, `/confirm`, `/resend-confirmation`, `/login`,
+`/forgot-password`, `/reset-password`, `/refresh`, `/logout`.
+Login/refresh/logout require `X-AfroChop-Client: web` with an allowed browser Origin
+or `X-AfroChop-Client: native` with no Origin. Native refresh/logout send
+`{ "refreshToken": "..." }`; browser refresh/logout send `{}` and use the cookie.
+Confirmation and reset accept `{ email, code }` and `{ email, code, password }`.
+No confirmation or reset operation signs the user in automatically.
 
 ## TestFlight deployment
 
@@ -191,7 +285,7 @@ Expo prints a QR code in that terminal. Scan it with the iPhone Camera app (open
 
 ### What can currently be tested
 
-The mobile app starts with a welcome screen and customer/chef account entry, followed by a skippable first-use guide. Customers can register or sign in, set optional text-update consent, browse public cooks, choose a location country in the United States, Canada, or Europe, then use state/region and city suggestions (with manual entry), inspect menus, galleries, social links and reviews, and submit an authenticated quote request. Location country options are separate from the African cuisine-country catalog. State/region and city suggestions reflect public cooks' service areas; customers can type a location before a cook is listed in it. The customer onboarding flow is optional and does not require location permission to browse. Cooks can register or sign in, manage dishes and reusable menu templates, add externally hosted food photos or videos, and save social profile links. Submitted cook profiles are public immediately, including while verification is pending; visibility does not complete verification or Stripe setup, or authorize paid orders. Private profiles, inactive accounts, and rejected or suspended cooks are excluded. SMS delivery requires Twilio configuration and customer consent. No end-to-end physical-device test can be claimed without connected iPhone/Android hardware.
+The mobile app starts with a welcome screen and customer/chef account entry, followed by a skippable first-use guide. Customers can register or sign in, set optional text-update consent, browse public cooks, choose a location country in the United States, Canada, or Europe, then use state/region and city suggestions (with manual entry), inspect menus, galleries, social links and reviews, and submit an authenticated quote request. Location country options are separate from the African cuisine-country catalog. State/region and city suggestions reflect public cooks' service areas; customers can type a location before a cook is listed in it. The customer onboarding flow is optional and does not require location permission to browse. Cooks can register or sign in, submit an application with a private encrypted visit address, manage dishes and reusable menu templates, add photos or videos, and save social profile links. AfroChop staff schedule a home visit, record the interview, and complete profile setup; only then does the cook become visible to customers. Cooks can continue editing their profile and adding marketing photos and videos after launch. Private profiles, inactive accounts, and rejected or suspended cooks remain excluded. Verification and Stripe setup remain separate and are still required before paid orders. SMS delivery requires Twilio configuration and customer consent. No end-to-end physical-device test can be claimed without connected iPhone/Android hardware.
 
 ## API endpoints
 
@@ -205,6 +299,9 @@ The mobile app starts with a welcome screen and customer/chef account entry, fol
 - Chef discovery: `GET /api/chefs?q=jollof&city=Brooklyn&serviceType=prepared_meals`
 - Public chef profile: `GET /api/chefs/:id`
 - Create/update chef profile: `POST /api/chefs/me/profile` (chef bearer token)
+- Submit a cook application and check its visit/setup status: `POST/GET /api/chefs/me/application` (chef bearer token)
+- Manage the staff application queue: `GET /api/admin/verification/chef-applications`; advance visit/interview/profile setup status with `PATCH /api/admin/verification/chef-applications/:id` (admin bearer token)
+- Access an applicant's encrypted home-visit address: `GET /api/admin/verification/chef-applications/:id/address` (admin bearer token; access is audited)
 - Add a food-gallery image/video URL: `POST /api/chefs/me/food-photos` (chef bearer token)
 - Read/update chef social links: `GET/PATCH /api/chefs/me/social-links` (chef bearer token)
 - Update customer text-update consent: `PATCH /api/auth/me/notification-preferences` (customer bearer token)
@@ -253,17 +350,73 @@ The mobile app starts with a welcome screen and customer/chef account entry, fol
 - Process Stripe Connect account updates: `POST /api/payments/webhooks/stripe` (verified Stripe signature)
 - Read/update payment fee basis points: `GET/PATCH /api/payments/admin/configuration` (admin bearer token)
 
-Chef search supports query text, African cuisine country, dish, service type, city/state/country code, price range, day of week, and pagination. Cuisine-country matching uses linked menu dishes and the chef's declared cuisine specialties. Location filtering currently matches configured service-area city/region exactly; GPS discovery and distance/radius ranking are not yet implemented. Search, direct profile links, public reviews, location suggestions and highlights share the same visibility rules: public profiles belonging to active users with pending or approved verification. Booking and paid-order approval checks remain separate and unchanged. Existing public pending profiles become discoverable when this API change is deployed; no migration or automatic verification approval is needed. Chef profile, menu, photo URL, availability, and service-area management require a chef bearer token.
+Chef search supports query text, African cuisine country, dish, service type, city/state/country code, price range, day of week, and pagination. Cuisine-country matching uses linked menu dishes and the chef's declared cuisine specialties. Location filtering currently matches configured service-area city/region exactly; GPS discovery and distance/radius ranking are not yet implemented. Search, direct profile links, public reviews, location suggestions and highlights share the same visibility rules: the cook's profile must be explicitly published after the home visit and profile setup, belong to an active user, and have pending or approved verification. Booking and paid-order approval checks remain separate and unchanged. Existing cooks must submit an application and complete the staff workflow before discovery; the migration does not auto-publish existing profiles. Chef profile, menu, photo/video, availability, and service-area management require a chef bearer token.
 
 Legacy food-gallery endpoints save validated HTTPS image or video URLs. Public binary photo uploads are described above; private verification-document storage, signed document uploads, malware scanning and retention deletion are still not wired. Permits remain quarantined until a trusted scanner reports a clean object. Videos must be directly playable by Expo Video, and short duration is not enforced. Optional Twilio order texts require backend credentials and a saved, opted-in customer phone number; configure Messaging Service STOP handling before enabling them. Delivery failures are logged without rolling back order updates. Quote requests persist the selected service date/time, duration, dietary details and versioned allergy acknowledgment. Accepting a quote reserves the chef's overlapping slot for 24 hours. Customers can review quotes, pay through hosted Checkout, request refund review, confirm receipt after the cook signals completion, and submit eligible reviews. In-home requests can select an owned, verified, unexpired service address; submitting an address does not approve it. See payment operations and verification below for configuration and remaining launch requirements.
+
+## Staff cook-application alerts
+
+After a new cook application (or a rejected application's resubmission) commits,
+the API attempts email alerts through Amazon SES and text alerts through Twilio.
+Returning an already-submitted application does not send another alert. Neither
+channel includes the cook's home address, applicant contact details, or private
+interview notes: notifications contain the application reference and instructions
+to check the staff-only application queue; email also includes the submission time.
+There is no staff dashboard or public application-review link yet.
+
+Configure these values **on the API only**, in the ignored root `.env` for local
+development or your deployment's secret/environment settings:
+
+| Variable | Purpose |
+|---|---|
+| `STAFF_APPLICATION_EMAILS` | Comma-separated staff inboxes, such as `operations@example.com,team@example.com` |
+| `STAFF_APPLICATION_SMS_NUMBERS` | Comma-separated staff phone numbers in E.164 format, such as `+14155550123`; include only staff who agreed to receive alerts |
+| `STAFF_ALERTS_FROM_EMAIL` | Plain sender email address verified in Amazon SES |
+| `AWS_REGION` | SES region containing the verified sender identity |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Dedicated backend SES credentials where runtime IAM roles are unavailable; grant only the needed `ses:SendEmail` access to the verified identity |
+| `AWS_SESSION_TOKEN` | Required only when using temporary AWS credentials |
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_MESSAGING_SERVICE_SID` | Existing Twilio Messaging credentials and service |
+
+Prefer IAM runtime roles to static keys. Do not reuse the seller-photo upload
+credentials. SES sandbox accounts can send only to verified recipients (or the
+SES mailbox simulator); request production access before using unverified staff
+inboxes. Configure the sender domain's SPF/DKIM records and ensure the SES identity
+and credentials match the selected region. Twilio trial accounts also restrict
+recipients; complete any required sender registration and geographic permissions.
+Staff SMS messages include STOP instructions; respect opt-outs and do not
+automatically re-enrol staff who unsubscribe.
+
+Each recipient is sent a separate message. Email and SMS failures are isolated;
+they never roll back a saved application. Missing/invalid configuration and
+provider failures are explicitly logged without logging recipient addresses,
+phone numbers, credentials or provider error messages. Success logs indicate
+provider acceptance, **not confirmed inbox/handset delivery**. SES performs up to
+three transport attempts for retryable failures; there is no durable background
+retry queue or delivery-status callback handling. Monitor errors and reconcile
+against `GET /api/admin/verification/chef-applications` so missed alerts do not
+leave applications unreviewed.
+
+After configuring recipients and provider access, rebuild/restart the API to load
+the new service/configuration. No mobile release or database migration is needed
+for these alerts. Real email/SMS delivery must be verified with opted-in test
+recipients before launch.
 
 ## Public seller photos (chefs, cooks, gardeners and farmers)
 
 Seller marketing is separate from paid-order approval: public seller profiles and
 showcase photos do not require Stripe onboarding. Both seller dashboards now have
-an **Add/Change Profile Picture** control and a **Showcase Your Work** gallery with
-captions and removal controls. Farmer public profiles include the gallery; chef
-public profiles continue using their existing food-photo gallery. Existing
+an **Add/Change Profile Picture** control and a **Food & Farm Feed** with
+captions and removal controls. Sellers can select up to 10 photos or 3 videos per
+batch, preview each selection, and write an individual caption (up to 500 characters).
+Each item is a separate public post, not a multi-item album. Uploads run sequentially;
+on failure, successful posts stay published and only the remaining selections are
+retained for retry while the screen stays open. Selections are not persisted across
+app restarts. Additional batches are supported without a total gallery cap, subject
+to the existing per-minute limits (10 photos / 3 videos). Farmer and chef public
+profiles show newest-first feed cards with complete captions, optional upload dates,
+and 12 posts initially; **Show More Posts** reveals older posts. Videos are opened
+on demand, never autoplayed. This progressively renders the gallery but does not
+paginate the existing gallery API responses. Existing
 externally hosted image URLs remain supported.
 
 The API accepts authenticated multipart uploads through
@@ -448,7 +601,9 @@ Stripe Accounts v2 recipient account creation happens when the chef explicitly s
 
 Set backend-only `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `CHECKOUT_RETURN_URL`, `STRIPE_CONNECT_RETURN_URL`, and `STRIPE_CONNECT_REFRESH_URL` in `.env` or the production secrets manager. `CHECKOUT_RETURN_URL` must be an HTTPS URL in production; it is required there. Never put Stripe secret keys in Expo environment variables. Use HTTPS URLs in production. The Stripe Dashboard webhook must listen for Connect `account.updated` and Checkout `checkout.session.completed` and `checkout.session.expired` events, and point to `POST /api/payments/webhooks/stripe`; raw-body signature verification is enabled by Nest. The handler updates transfer capability, payout status, and outstanding requirements. A chef becomes transfer-eligible only when Stripe reports the transfer capability as active. Account eligibility is not a transfer, payout, or promise of immediate bank settlement.
 
-Payment configuration is in basis points; the API fallback is 10% chef commission and 0% customer fee, while an existing/seeded configuration takes precedence. Both app roles read configured rates instead of hardcoding estimates. Administrators use `GET/PATCH /api/payments/admin/configuration` to auditably change them. The accepted quote, customer fee, commission, chef share, currency and destination are snapshotted before Checkout creation in integer cents. The full quote plus separately disclosed customer fee is charged; clients cannot override amounts. Current settlement is USD-only, without currency conversion or automatic tax calculation.
+Payment configuration is in basis points; the API fallback is 10% chef commission and 0% customer fee, while an existing/seeded configuration takes precedence. Both app roles read configured rates instead of hardcoding estimates. Administrators use `GET/PATCH /api/payments/admin/configuration` to auditably change them. The accepted quote, customer fee, commission, chef share, currency and destination are snapshotted before Checkout creation in integer cents. The full quote plus separately disclosed customer fee is charged; clients cannot override amounts. Checkout currency is derived from the cook market country (for example USD, CAD, GBP, EUR, CHF and other supported local currencies), with a USD fallback when no country is set.
+
+The chef workspace's Commission policy page shows the configured rate and a 100-unit example in the profile country's currency: at 10%, the AfroChop fee is 10 and the chef share is 90. It explains platform-paid processing fees, separately disclosed customer fees, refund/dispute adjustments, completion-based release and Stripe bank-payout timing. The example is illustrative, not an account balance. Chefs can refresh the rate or navigate directly to Payment setup.
 
 Stripe assigns the platform responsibility for processing fees and negative connected-account balances in this Connect configuration. Stripe Connect is not escrow. Charges are made on the platform; a separate cook transfer is released only after the cook marks delivery/service complete and the customer confirms receipt. Refund requests, pending/existing refunds, unresolved/lost disputes or reversed transfers block release. Stripe manages subsequent bank payouts; a transfer is not bank-settlement confirmation. Live charges/transfers require `STRIPE_LIVE_PAYMENTS_ENABLED=true`, `NODE_ENV=production`, and no compliance bypass. Keep the switch false until counsel, Stripe onboarding, jurisdiction approvals, test-mode checks and payments operations are signed off.
 

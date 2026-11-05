@@ -15,6 +15,7 @@ import {
   SafetyIncidentSeverity,
   SafetyIncidentStatus,
   ServiceType,
+  ChefApplicationStatus,
   ChefVerificationStatus,
   ChefCredentialType,
   VerificationStatus,
@@ -79,6 +80,51 @@ export class ChefStatusReviewDto {
   @IsString()
   @MaxLength(2000)
   reviewerNotes?: string;
+}
+
+export class ChefApplicationDto {
+  @IsString()
+  @MinLength(2)
+  @MaxLength(200)
+  line1: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  line2?: string;
+
+  @IsString()
+  @MinLength(2)
+  @MaxLength(100)
+  city: string;
+
+  @IsString()
+  @MinLength(2)
+  @MaxLength(100)
+  region: string;
+
+  @IsString()
+  @MinLength(2)
+  @MaxLength(32)
+  postalCode: string;
+
+  @IsString()
+  @Matches(/^[A-Za-z]{2}$/)
+  countryCode: string;
+}
+
+export class ChefApplicationReviewDto {
+  @IsEnum(ChefApplicationStatus)
+  status: ChefApplicationStatus;
+
+  @IsOptional()
+  @IsDateString()
+  visitScheduledAt?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  adminNotes?: string;
 }
 
 export class ComplianceRuleDto {

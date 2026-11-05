@@ -58,6 +58,7 @@ export class QuotesService {
                 displayName: true,
                 profileImageUrl: true,
                 averageRating: true,
+                countryCode: true,
               },
             },
           },
@@ -95,6 +96,7 @@ export class QuotesService {
             userId: true,
             displayName: true,
             profileImageUrl: true,
+            countryCode: true,
           },
         },
         quotes: {

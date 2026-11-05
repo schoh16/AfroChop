@@ -86,15 +86,15 @@ function build() {
 describe('booking money operations', () => {
   it('snapshots commission and customer fee in integer cents', async () => {
     const setup = build();
-    const payment = await setup.service.prepareCheckout('b1', 10000, 1500, 250);
-    expect(payment).toMatchObject({ quoteCents: 10000, platformFeeCents: 1500, customerFeeCents: 250, grossCents: 10250, chefCents: 8500 });
+    const payment = await setup.service.prepareCheckout('b1', 10000, 1000, 250, 'cad');
+    expect(payment).toMatchObject({ quoteCents: 10000, platformFeeCents: 1000, customerFeeCents: 250, grossCents: 10250, chefCents: 9000, currency: 'cad' });
     expect(setup.tx.bookingPayment.upsert.mock.calls[0][0].update).toEqual({});
   });
 
   it('requires an eligible connected account before checkout', async () => {
     const setup = build();
     setup.booking.chef.stripeConnectedAccount.status = 'pending';
-    await expect(setup.service.prepareCheckout('b1', 10000, 1000, 0)).rejects.toThrow('eligibility');
+    await expect(setup.service.prepareCheckout('b1', 10000, 1000, 0, 'usd')).rejects.toThrow('eligibility');
   });
 
   it('requires both ordered completion confirmations before release', async () => {

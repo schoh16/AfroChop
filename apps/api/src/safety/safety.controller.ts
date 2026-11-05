@@ -23,6 +23,8 @@ import {
   ChefCredentialDto,
   ChefCredentialReviewDto,
   ChefServiceApprovalDto,
+  ChefApplicationDto,
+  ChefApplicationReviewDto,
   CustomerServiceAddressDto,
   PermitReviewDto,
   PhoneNumberDto,
@@ -38,31 +40,98 @@ import { VerificationCodeService } from './verification-code.service.js';
 @Controller()
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class SafetyController {
-  constructor(private readonly safetyService: SafetyService, private readonly codes: VerificationCodeService) {}
+  constructor(
+    private readonly safetyService: SafetyService,
+    private readonly codes: VerificationCodeService,
+  ) {}
+
+  @Post('chefs/me/application')
+  @Header('Cache-Control', 'no-store')
+  @Roles(UserRole.chef)
+  submitChefApplication(
+    @Req() request: AuthenticatedRequest,
+    @Body() dto: ChefApplicationDto,
+  ) {
+    return this.safetyService.submitChefApplication(request.user.sub, dto);
+  }
+
+  @Get('chefs/me/application')
+  @Header('Cache-Control', 'no-store')
+  @Roles(UserRole.chef)
+  getMyChefApplication(@Req() request: AuthenticatedRequest) {
+    return this.safetyService.getMyChefApplication(request.user.sub);
+  }
+
+  @Get('admin/verification/chef-applications')
+  @Header('Cache-Control', 'no-store')
+  @Roles(UserRole.admin)
+  listChefApplications() {
+    return this.safetyService.listChefApplications();
+  }
+
+  @Get('admin/verification/chef-applications/:id/address')
+  @Header('Cache-Control', 'no-store')
+  @Roles(UserRole.admin)
+  getChefApplicationAddress(
+    @Req() request: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.safetyService.getChefApplicationAddress(request.user.sub, id);
+  }
+
+  @Patch('admin/verification/chef-applications/:id')
+  @Header('Cache-Control', 'no-store')
+  @Roles(UserRole.admin)
+  reviewChefApplication(
+    @Req() request: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ChefApplicationReviewDto,
+  ) {
+    return this.safetyService.reviewChefApplication(request.user.sub, id, dto);
+  }
 
   @Get('admin/verification/service-addresses/:id')
   @Header('Cache-Control', 'no-store')
   @Roles(UserRole.admin)
-  readServiceAddress(@Req() request: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
+  readServiceAddress(
+    @Req() request: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
     return this.safetyService.getAdminServiceAddress(request.user.sub, id);
   }
 
   @Get('verification/bookings/:id/service-address')
   @Header('Cache-Control', 'no-store')
   @Roles(UserRole.customer, UserRole.chef)
-  readBookingServiceAddress(@Req() request: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
-    return this.safetyService.getBookingServiceAddress(request.user.sub, request.user.role, id);
+  readBookingServiceAddress(
+    @Req() request: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.safetyService.getBookingServiceAddress(
+      request.user.sub,
+      request.user.role,
+      id,
+    );
   }
 
   @Post('verification/me/:type/send-code')
   @Roles(UserRole.customer, UserRole.chef)
-  sendCode(@Req() request: AuthenticatedRequest, @Param('type', new ParseEnumPipe(UserVerificationType)) type: UserVerificationType) {
+  sendCode(
+    @Req() request: AuthenticatedRequest,
+    @Param('type', new ParseEnumPipe(UserVerificationType))
+    type: UserVerificationType,
+  ) {
     return this.codes.send(request.user.sub, type);
   }
 
   @Post('verification/me/:type/check-code')
   @Roles(UserRole.customer, UserRole.chef)
-  checkCode(@Req() request: AuthenticatedRequest, @Param('type', new ParseEnumPipe(UserVerificationType)) type: UserVerificationType, @Body() dto: VerificationCodeDto) {
+  checkCode(
+    @Req() request: AuthenticatedRequest,
+    @Param('type', new ParseEnumPipe(UserVerificationType))
+    type: UserVerificationType,
+    @Body() dto: VerificationCodeDto,
+  ) {
     return this.codes.check(request.user.sub, type, dto.code);
   }
 
@@ -70,7 +139,10 @@ export class SafetyController {
   @Header('Cache-Control', 'no-store')
   @Roles(UserRole.customer, UserRole.chef)
   getMyVerification(@Req() request: AuthenticatedRequest) {
-    return this.safetyService.getMyVerification(request.user.sub, request.user.role);
+    return this.safetyService.getMyVerification(
+      request.user.sub,
+      request.user.role,
+    );
   }
 
   @Put('verification/me/phone')
@@ -121,7 +193,8 @@ export class SafetyController {
   reviewUserVerification(
     @Req() request: AuthenticatedRequest,
     @Param('userId', ParseUUIDPipe) userId: string,
-    @Param('type', new ParseEnumPipe(UserVerificationType)) type: UserVerificationType,
+    @Param('type', new ParseEnumPipe(UserVerificationType))
+    type: UserVerificationType,
     @Body() dto: UserVerificationReviewDto,
   ) {
     return this.safetyService.reviewUserVerification(
@@ -193,7 +266,10 @@ export class SafetyController {
 
   @Put('admin/safety/compliance-rules')
   @Roles(UserRole.admin)
-  saveComplianceRule(@Req() request: AuthenticatedRequest, @Body() dto: ComplianceRuleDto) {
+  saveComplianceRule(
+    @Req() request: AuthenticatedRequest,
+    @Body() dto: ComplianceRuleDto,
+  ) {
     return this.safetyService.saveComplianceRule(request.user.sub, dto);
   }
 

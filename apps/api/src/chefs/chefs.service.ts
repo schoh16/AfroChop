@@ -21,9 +21,7 @@ import { publicChefWhere } from './public-chef.js';
 
 @Injectable()
 export class ChefsService {
-  constructor(
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async completeOnboarding(userId: string, dto: ChefOnboardingDto) {
     return this.prisma.$transaction(async (tx) => {
@@ -33,32 +31,56 @@ export class ChefsService {
       }
       const foods = [];
       for (const food of dto.foods) {
-        if (!food.name.trim()) throw new BadRequestException('Enter a food name.');
+        if (!food.name.trim())
+          throw new BadRequestException('Enter a food name.');
         if (food.dishId) {
           const dish = await tx.dish.findFirst({
             where: { id: food.dishId, isApproved: true },
             include: { dishCountries: { select: { countryId: true } } },
           });
           if (!dish) throw new BadRequestException('Choose an available food.');
-          for (const origin of dish.dishCountries.length ? dish.dishCountries : [{ countryId: null }]) {
+          for (const origin of dish.dishCountries.length
+            ? dish.dishCountries
+            : [{ countryId: null }]) {
             foods.push({ name: dish.name, cuisineCountryId: origin.countryId });
           }
         } else {
-          if (food.cuisineCountryId && !await tx.country.findUnique({ where: { id: food.cuisineCountryId } })) {
-            throw new BadRequestException('Choose a supported cuisine country.');
+          if (
+            food.cuisineCountryId &&
+            !(await tx.country.findUnique({
+              where: { id: food.cuisineCountryId },
+            }))
+          ) {
+            throw new BadRequestException(
+              'Choose a supported cuisine country.',
+            );
           }
-          foods.push({ name: food.name.trim(), cuisineCountryId: food.cuisineCountryId ?? null });
+          foods.push({
+            name: food.name.trim(),
+            cuisineCountryId: food.cuisineCountryId ?? null,
+          });
         }
       }
       const chef = await tx.chefProfile.upsert({
         where: { userId },
-        create: { userId, displayName: user.name, languages: [], isPublic: true },
-        update: { isPublic: true },
+        create: {
+          userId,
+          displayName: user.name,
+          languages: [],
+          isPublic: false,
+        },
+        update: {},
       });
       // Serialize retries so a resumed signup cannot duplicate menu entries.
       await tx.$queryRaw`SELECT id FROM chef_profiles WHERE id = ${chef.id}::uuid FOR UPDATE`;
-      const existing = await tx.chefMenuEntry.findMany({ where: { chefId: chef.id } });
-      const keys = new Set(existing.map((food) => `${food.name.toLowerCase()}:${food.cuisineCountryId}`));
+      const existing = await tx.chefMenuEntry.findMany({
+        where: { chefId: chef.id },
+      });
+      const keys = new Set(
+        existing.map(
+          (food) => `${food.name.toLowerCase()}:${food.cuisineCountryId}`,
+        ),
+      );
       const additions = foods.filter((food) => {
         const key = `${food.name.toLowerCase()}:${food.cuisineCountryId}`;
         if (keys.has(key)) return false;
@@ -66,7 +88,9 @@ export class ChefsService {
         return true;
       });
       if (additions.length) {
-        await tx.chefMenuEntry.createMany({ data: additions.map((food) => ({ ...food, chefId: chef.id })) });
+        await tx.chefMenuEntry.createMany({
+          data: additions.map((food) => ({ ...food, chefId: chef.id })),
+        });
       }
       return { id: chef.id, displayName: chef.displayName };
     });
@@ -82,10 +106,7 @@ export class ChefsService {
     const requestedCountryCode = dto.countryCode?.trim().toUpperCase();
     const connectedCountryCode =
       existingProfile?.stripeConnectedAccount?.countryCode;
-    if (
-      connectedCountryCode &&
-      requestedCountryCode !== connectedCountryCode
-    ) {
+    if (connectedCountryCode && requestedCountryCode !== connectedCountryCode) {
       throw new BadRequestException(
         'A connected Stripe account cannot change countries. Contact support for payout account changes.',
       );
@@ -106,11 +127,9 @@ export class ChefsService {
         serviceRadiusKm: dto.serviceRadiusKm,
         profileImageUrl: dto.profileImageUrl,
         coverImageUrl: dto.coverImageUrl,
-        isPublic: true,
       },
       update: {
         displayName: dto.displayName,
-        isPublic: true,
         bio: dto.bio,
         city: dto.city,
         state: dto.state,
@@ -154,9 +173,13 @@ export class ChefsService {
         name: dto.name.trim(),
         description: dto.description?.trim(),
         cuisineCountryId: dto.cuisineCountryId,
-        knownIngredients: dto.knownIngredients.map((item) => item.trim()).filter(Boolean),
+        knownIngredients: dto.knownIngredients
+          .map((item) => item.trim())
+          .filter(Boolean),
         majorAllergens: dto.majorAllergens,
-        crossContactRisks: dto.crossContactRisks.map((risk) => risk.trim()).filter(Boolean),
+        crossContactRisks: dto.crossContactRisks
+          .map((risk) => risk.trim())
+          .filter(Boolean),
       },
       include: {
         cuisineCountry: { select: { id: true, name: true, flag: true } },
@@ -164,7 +187,11 @@ export class ChefsService {
     });
   }
 
-  async updateMenuEntry(userId: string, entryId: string, dto: ChefMenuEntryDto) {
+  async updateMenuEntry(
+    userId: string,
+    entryId: string,
+    dto: ChefMenuEntryDto,
+  ) {
     const chef = await this.findChefByUserId(userId);
     await this.ensureCuisineCountry(dto.cuisineCountryId);
     const updated = await this.prisma.chefMenuEntry.updateMany({
@@ -173,15 +200,22 @@ export class ChefsService {
         name: dto.name.trim(),
         description: dto.description?.trim(),
         cuisineCountryId: dto.cuisineCountryId,
-        knownIngredients: dto.knownIngredients.map((item) => item.trim()).filter(Boolean),
+        knownIngredients: dto.knownIngredients
+          .map((item) => item.trim())
+          .filter(Boolean),
         majorAllergens: dto.majorAllergens,
-        crossContactRisks: dto.crossContactRisks.map((risk) => risk.trim()).filter(Boolean),
+        crossContactRisks: dto.crossContactRisks
+          .map((risk) => risk.trim())
+          .filter(Boolean),
       },
     });
-    if (updated.count === 0) throw new NotFoundException('Menu item not found.');
+    if (updated.count === 0)
+      throw new NotFoundException('Menu item not found.');
     return this.prisma.chefMenuEntry.findUnique({
       where: { id: entryId },
-      include: { cuisineCountry: { select: { id: true, name: true, flag: true } } },
+      include: {
+        cuisineCountry: { select: { id: true, name: true, flag: true } },
+      },
     });
   }
 
@@ -190,7 +224,8 @@ export class ChefsService {
     const deleted = await this.prisma.chefMenuEntry.deleteMany({
       where: { id: entryId, chefId: chef.id },
     });
-    if (deleted.count === 0) throw new NotFoundException('Menu item not found.');
+    if (deleted.count === 0)
+      throw new NotFoundException('Menu item not found.');
     return { deleted: true };
   }
 
@@ -212,14 +247,18 @@ export class ChefsService {
     const chef = await this.findChefByUserId(userId);
     const uniqueEntryIds = [...new Set(dto.menuEntryIds)];
     if (uniqueEntryIds.length !== dto.menuEntryIds.length) {
-      throw new BadRequestException('A menu template cannot include the same menu item twice.');
+      throw new BadRequestException(
+        'A menu template cannot include the same menu item twice.',
+      );
     }
     const entries = await this.prisma.chefMenuEntry.findMany({
       where: { chefId: chef.id, id: { in: uniqueEntryIds } },
       select: { id: true },
     });
     if (entries.length !== uniqueEntryIds.length) {
-      throw new BadRequestException('Templates can only include your own menu items.');
+      throw new BadRequestException(
+        'Templates can only include your own menu items.',
+      );
     }
     return this.prisma.chefMenuTemplate.create({
       data: {
@@ -248,7 +287,8 @@ export class ChefsService {
     const deleted = await this.prisma.chefMenuTemplate.deleteMany({
       where: { id: templateId, chefId: chef.id },
     });
-    if (deleted.count === 0) throw new NotFoundException('Menu template not found.');
+    if (deleted.count === 0)
+      throw new NotFoundException('Menu template not found.');
     return { deleted: true };
   }
 
@@ -290,7 +330,8 @@ export class ChefsService {
       where: { id: countryId },
       select: { id: true },
     });
-    if (!country) throw new BadRequestException('Choose a country from the cuisine list.');
+    if (!country)
+      throw new BadRequestException('Choose a country from the cuisine list.');
   }
 
   async addFoodPhoto(userId: string, dto: FoodPhotoDto) {
@@ -347,12 +388,16 @@ export class ChefsService {
 
     for (const slot of dto.availability) {
       if (slot.startTime >= slot.endTime) {
-        throw new BadRequestException('Availability end time must be later than start time.');
+        throw new BadRequestException(
+          'Availability end time must be later than start time.',
+        );
       }
     }
 
     return this.prisma.$transaction(async (transaction) => {
-      await transaction.chefAvailability.deleteMany({ where: { chefId: chef.id } });
+      await transaction.chefAvailability.deleteMany({
+        where: { chefId: chef.id },
+      });
       if (dto.availability.length === 0) return [];
       await transaction.chefAvailability.createMany({
         data: dto.availability.map((slot) => ({
@@ -373,7 +418,9 @@ export class ChefsService {
     const chef = await this.findChefByUserId(userId);
 
     return this.prisma.$transaction(async (transaction) => {
-      await transaction.chefServiceArea.deleteMany({ where: { chefId: chef.id } });
+      await transaction.chefServiceArea.deleteMany({
+        where: { chefId: chef.id },
+      });
       if (dto.areas.length === 0) return [];
       await transaction.chefServiceArea.createMany({
         data: dto.areas.map((area) => ({
@@ -429,7 +476,9 @@ export class ChefsService {
       select: { id: true },
     });
     if (!chef) {
-      throw new NotFoundException('Create a chef profile before managing its details.');
+      throw new NotFoundException(
+        'Create a chef profile before managing its details.',
+      );
     }
     return chef;
   }
@@ -474,14 +523,20 @@ export class ChefsService {
       }
     }
     const dishFilter: Prisma.ChefDishWhereInput | undefined =
-      query.dishId || query.minPrice !== undefined || query.maxPrice !== undefined
+      query.dishId ||
+      query.minPrice !== undefined ||
+      query.maxPrice !== undefined
         ? {
             ...(query.dishId ? { dishId: query.dishId } : {}),
             ...(query.minPrice !== undefined || query.maxPrice !== undefined
               ? {
                   price: {
-                    ...(query.minPrice !== undefined ? { gte: query.minPrice } : {}),
-                    ...(query.maxPrice !== undefined ? { lte: query.maxPrice } : {}),
+                    ...(query.minPrice !== undefined
+                      ? { gte: query.minPrice }
+                      : {}),
+                    ...(query.maxPrice !== undefined
+                      ? { lte: query.maxPrice }
+                      : {}),
                   },
                 }
               : {}),
@@ -501,7 +556,11 @@ export class ChefsService {
               },
             },
           },
-          { menuEntries: { some: { name: { contains: query.q, mode: 'insensitive' } } } },
+          {
+            menuEntries: {
+              some: { name: { contains: query.q, mode: 'insensitive' } },
+            },
+          },
         ],
       });
     }
@@ -531,14 +590,32 @@ export class ChefsService {
       ...(permitConstraints.length || discoveryConstraints.length
         ? { AND: [...permitConstraints, ...discoveryConstraints] }
         : {}),
-      ...(query.serviceType ? { serviceTypes: { has: query.serviceType as ServiceType } } : {}),
+      ...(query.serviceType
+        ? { serviceTypes: { has: query.serviceType as ServiceType } }
+        : {}),
       ...(query.city || query.state || query.countryCode
         ? {
             serviceAreas: {
               some: {
-                ...(query.city ? { city: { equals: query.city, mode: 'insensitive' as const } } : {}),
-                ...(query.state ? { state: { equals: query.state, mode: 'insensitive' as const } } : {}),
-                ...(query.countryCode ? { countryCode: query.countryCode.toUpperCase() } : {}),
+                ...(query.city
+                  ? {
+                      city: {
+                        equals: query.city,
+                        mode: 'insensitive' as const,
+                      },
+                    }
+                  : {}),
+                ...(query.state
+                  ? {
+                      state: {
+                        equals: query.state,
+                        mode: 'insensitive' as const,
+                      },
+                    }
+                  : {}),
+                ...(query.countryCode
+                  ? { countryCode: query.countryCode.toUpperCase() }
+                  : {}),
               },
             },
           }
@@ -551,8 +628,8 @@ export class ChefsService {
           }
         : {}),
       ...(!query.countryId && dishFilter
-          ? { chefDishes: { some: dishFilter } }
-          : undefined),
+        ? { chefDishes: { some: dishFilter } }
+        : undefined),
     };
 
     const [chefs, total] = await this.prisma.$transaction([
@@ -592,7 +669,9 @@ export class ChefsService {
                   id: true,
                   name: true,
                   dishCountries: {
-                    select: { country: { select: { id: true, name: true, flag: true } } },
+                    select: {
+                      country: { select: { id: true, name: true, flag: true } },
+                    },
                   },
                 },
               },
@@ -614,7 +693,12 @@ export class ChefsService {
           foodPhotos: {
             take: 6,
             orderBy: { createdAt: 'desc' },
-            select: { id: true, imageUrl: true, mediaType: true, caption: true },
+            select: {
+              id: true,
+              imageUrl: true,
+              mediaType: true,
+              caption: true,
+            },
           },
           serviceAreas: {
             select: {
@@ -636,7 +720,13 @@ export class ChefsService {
       this.prisma.chefProfile.count({ where }),
     ]);
 
-    return { items: chefs, page, limit, total, pages: Math.ceil(total / limit) };
+    return {
+      items: chefs,
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
+    };
   }
 
   async getPublicProfile(id: string) {
@@ -676,7 +766,9 @@ export class ChefsService {
                 name: true,
                 description: true,
                 dishCountries: {
-                  select: { country: { select: { id: true, name: true, flag: true } } },
+                  select: {
+                    country: { select: { id: true, name: true, flag: true } },
+                  },
                 },
               },
             },
@@ -712,7 +804,13 @@ export class ChefsService {
         },
         foodPhotos: {
           orderBy: { createdAt: 'desc' },
-          select: { id: true, imageUrl: true, mediaType: true, caption: true, createdAt: true },
+          select: {
+            id: true,
+            imageUrl: true,
+            mediaType: true,
+            caption: true,
+            createdAt: true,
+          },
         },
         serviceAreas: {
           select: {

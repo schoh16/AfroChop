@@ -1,3 +1,4 @@
+import { authenticatedFetch as fetch } from '../lib/session';
 import * as Linking from 'expo-linking';
 import { useEffect, useState } from 'react';
 import {
@@ -30,6 +31,7 @@ type PayoutStatus = {
     pastDue?: string[];
   } | null;
   disabledReason: string | null;
+  chefCommissionPercent: number;
   lastSyncedAt: string | null;
 };
 
@@ -124,7 +126,7 @@ export function ChefPayoutSetup({ accessToken }: { accessToken: string }) {
             </Text>
           </View>
           <Text style={styles.body}>
-            Stripe verifies your identity and payout account. View AfroChop’s sales commission in the Commission policy page.
+            Stripe securely collects your bank details and payout preferences. AfroChop keeps {status.chefCommissionPercent}% of each completed sale and routes the remainder to your connected payout account.
           </Text>
           {status.disabledReason ? (
             <Text style={styles.warning}>Stripe status: {status.disabledReason}</Text>
@@ -147,15 +149,19 @@ export function ChefPayoutSetup({ accessToken }: { accessToken: string }) {
           <View style={styles.actions}>
             <Pressable
               accessibilityRole="button"
-              disabled={isLoading || status.eligibleToReceiveTransfers}
+              disabled={isLoading}
               onPress={() => void startOnboarding()}
               style={[
                 styles.primaryButton,
-                (isLoading || status.eligibleToReceiveTransfers) && styles.disabled,
+                isLoading && styles.disabled,
               ]}
             >
               <Text style={styles.primaryButtonText}>
-                {status.connected ? 'Continue Stripe setup' : 'Set up Stripe payouts'}
+                {status.eligibleToReceiveTransfers
+                  ? 'Manage bank account in Stripe'
+                  : status.connected
+                    ? 'Continue Stripe setup'
+                    : 'Set up Stripe payouts'}
               </Text>
             </Pressable>
             <Pressable

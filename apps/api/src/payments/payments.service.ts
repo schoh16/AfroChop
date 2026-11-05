@@ -19,6 +19,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { PaymentConfigurationDto } from './dto/payment-configuration.dto.js';
 import { BookingMoneyService } from './booking-money.service.js';
 import { STRIPE_CLIENT } from './payments.constants.js';
+import { checkoutCurrencyForCountry } from './currency-policy.js';
 
 export { STRIPE_CLIENT } from './payments.constants.js';
 const PAYMENT_CONFIGURATION_ID = 'default';
@@ -357,7 +358,7 @@ export class PaymentsService {
     );
     const quote = await this.prisma.quote.findFirst({
       where: { id: quoteId, bookingRequest: { customerId } },
-      include: { bookingRequest: true },
+      include: { bookingRequest: true, chef: { select: { countryCode: true } } },
     });
     if (!quote) throw new NotFoundException('Quote not found.');
     const booking = quote.bookingRequest;
@@ -406,7 +407,11 @@ export class PaymentsService {
         : 'http://localhost:8081';
     const configuration = await this.ensurePaymentConfiguration();
     const payment = await this.money.prepareCheckout(
-      booking.id, depositCents, configuration.chefCommissionBps, configuration.customerMarketplaceFeeBps,
+      booking.id,
+      depositCents,
+      configuration.chefCommissionBps,
+      configuration.customerMarketplaceFeeBps,
+      checkoutCurrencyForCountry(quote.chef?.countryCode),
     );
 
     const session = await stripe.checkout.sessions.create({
@@ -418,7 +423,7 @@ export class PaymentsService {
         {
           quantity: 1,
           price_data: {
-            currency: 'usd',
+            currency: payment.currency,
             unit_amount: payment.grossCents,
             product_data: { name: 'AfroChop order payment' },
           },

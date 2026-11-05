@@ -2,6 +2,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { File } from 'expo-file-system';
 import { fetch as expoFetch } from 'expo/fetch';
 import { Platform } from 'react-native';
+import { getAccessToken } from './session';
 
 const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
 export type SellerVideo = { uri: string; mimeType: string; file?: globalThis.File };
@@ -12,7 +13,23 @@ export async function pickSellerVideo(): Promise<SellerVideo | null> {
     allowsEditing: false,
   });
   if (result.canceled) return null;
-  const asset = result.assets[0];
+  return sellerVideoFromAsset(result.assets[0]);
+}
+
+export async function pickShowcaseVideos(): Promise<SellerVideo[]> {
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ['videos'],
+    allowsMultipleSelection: true,
+    selectionLimit: 3,
+    orderedSelection: true,
+    allowsEditing: false,
+  });
+  if (result.canceled) return [];
+  if (result.assets.length > 3) throw new Error('Choose up to 3 videos at a time.');
+  return result.assets.map(sellerVideoFromAsset);
+}
+
+function sellerVideoFromAsset(asset: ImagePicker.ImagePickerAsset): SellerVideo {
   if (asset.duration != null && asset.duration > 60_000) {
     throw new Error('Choose a video that is 60 seconds or shorter.');
   }
@@ -27,7 +44,7 @@ export async function pickSellerVideo(): Promise<SellerVideo | null> {
 }
 
 export async function uploadSellerVideo<T>(
-  apiBaseUrl: string, token: string, video: SellerVideo, caption?: string,
+  apiBaseUrl: string, _token: string, video: SellerVideo, caption?: string,
 ): Promise<T> {
   const form = new FormData();
   const file = Platform.OS === 'web'
@@ -40,7 +57,7 @@ export async function uploadSellerVideo<T>(
   form.append('file', file, video.mimeType === 'video/quicktime' ? 'video.mov' : 'video.mp4');
   if (caption) form.append('caption', caption);
   const response = await expoFetch(`${apiBaseUrl}/media/gallery/video`, {
-    method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form,
+    method: 'POST', headers: { Authorization: `Bearer ${await getAccessToken()}` }, body: form,
   });
   const text = await response.text();
   let result;

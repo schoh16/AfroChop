@@ -14,19 +14,18 @@ function setup() {
     bookingPayment: { fields: { grossCents: {} }, findFirst: vi.fn().mockResolvedValue(null) },
   };
   const prisma = { $transaction: vi.fn().mockImplementation((callback) => callback(tx)) };
-  const jwt = { sign: vi.fn().mockReturnValue('new-role-token') };
-  return { account, tx, prisma, jwt, service: new AuthService(prisma as never, jwt as never, {} as never) };
+  return { account, tx, prisma, service: new AuthService(prisma as never, {} as never) };
 }
 
 describe('one-time role selection', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it.each([RegisterRole.CUSTOMER, RegisterRole.CHEF, RegisterRole.FARMER])('saves %s once and issues the matching token', async (role) => {
-    const { service, tx, jwt } = setup();
+  it.each([RegisterRole.CUSTOMER, RegisterRole.CHEF, RegisterRole.FARMER])('saves %s once without replacing the Cognito identity token', async (role) => {
+    const { service, tx } = setup();
     const result = await service.selectRole('user-id', role);
-    expect(result).toMatchObject({ role, token: 'new-role-token', requiresRoleSelection: false });
+    expect(result).toMatchObject({ role, requiresRoleSelection: false });
+    expect(result).not.toHaveProperty('token');
     expect(tx.user.update).toHaveBeenCalledWith({ where: { id: 'user-id' }, data: { role, roleSelectedAt: expect.any(Date) } });
-    expect(jwt.sign).toHaveBeenCalledWith({ sub: 'user-id', email: 'test@example.invalid', role });
     if (role === 'chef') expect(tx.chefProfile.upsert).toHaveBeenCalled();
     if (role === 'farmer') expect(tx.farmerProfile.upsert).toHaveBeenCalled();
   });
@@ -55,11 +54,11 @@ describe('one-time role selection', () => {
     expect(tx.farmerProfile.updateMany).toHaveBeenCalledWith({ where: { userId: 'user-id' }, data: { isPublic: false } });
   });
 
-  it('rejects a second role choice but safely reissues a token for the same choice', async () => {
+  it('rejects a second role choice but safely confirms the same choice', async () => {
     const { service, account, tx } = setup();
     account.roleSelectedAt = new Date();
     await expect(service.selectRole('user-id', RegisterRole.CHEF)).rejects.toThrow('already been selected');
-    await expect(service.selectRole('user-id', RegisterRole.CUSTOMER)).resolves.toMatchObject({ token: 'new-role-token' });
+    await expect(service.selectRole('user-id', RegisterRole.CUSTOMER)).resolves.toMatchObject({ role: 'customer' });
     expect(tx.user.update).not.toHaveBeenCalled();
   });
 
