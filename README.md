@@ -197,8 +197,8 @@ Run EAS commands from `apps/mobile`, not the repository root; the mobile
 configuration uses the existing `com.afrochop.app` App Store application.
 The `testflight` profile creates a store-signed build connected to
 `https://afrochop-api.onrender.com/api`, with a separate `testflight` update
-channel. App version `1.0.1` also separates its native runtime from earlier
-`1.0.0` builds.
+channel. App version `1.0.3` separates its native runtime from earlier builds,
+including the staging branch's `1.0.2` release.
 Mobile build profiles set `SHARP_IGNORE_GLOBAL_LIBVIPS=1` so the API's
 workspace dependency uses prebuilt Sharp binaries rather than detecting the
 Mac builder's global libvips and attempting an unnecessary source build.
