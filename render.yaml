@@ -28,6 +28,6 @@ services:
 
 databases:
   - name: afrochop-db
-    plan: basic-256mb
+    plan: free
     databaseName: afrochef
     user: afrochef
