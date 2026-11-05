@@ -48,7 +48,9 @@ services:
       DATABASE_URL: postgresql://afrochef:afrochef@postgres:5432/afrochef?schema=public
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      JWT_SECRET: ${JWT_SECRET:-}
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID:-}
+      COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8082,http://localhost:8081}
       VERIFICATION_ENCRYPTION_KEY: ${VERIFICATION_ENCRYPTION_KEY:-}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}

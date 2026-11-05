@@ -1,0 +1,63 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AfroChop customer identity (deploy separately for each environment).
+Resources:
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      UserPoolName: !Sub '${AWS::StackName}-users'
+      DeletionProtection: ACTIVE
+      UsernameAttributes: [email]
+      UsernameConfiguration:
+        CaseSensitive: false
+      AutoVerifiedAttributes: [email]
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: false
+        - Name: name
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+      MfaConfiguration: 'OFF'
+      VerificationMessageTemplate:
+        DefaultEmailOption: CONFIRM_WITH_CODE
+  AppClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: afrochop-api
+      GenerateSecret: false
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      ExplicitAuthFlows: [ALLOW_USER_PASSWORD_AUTH]
+      AccessTokenValidity: 15
+      IdTokenValidity: 15
+      RefreshTokenValidity: 30
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+      RefreshTokenRotation:
+        Feature: ENABLED
+        RetryGracePeriodSeconds: 60
+      ReadAttributes: [email, email_verified, name]
+      WriteAttributes: [email, name]
+Outputs:
+  UserPoolId:
+    Value: !Ref UserPool
+  ClientId:
+    Value: !Ref AppClient

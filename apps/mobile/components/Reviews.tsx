@@ -1,3 +1,4 @@
+import { authenticatedFetch as fetch } from '../lib/session';
 import { useState } from 'react';
 import {
   Image,

@@ -46,18 +46,13 @@ npm install
 copy .env.example .env
 ```
 
-Generate a unique JWT signing secret and set it in `.env` before starting the API. The API refuses to start without a secret of at least 32 bytes:
+Configure `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, and `CORS_ORIGINS` as
+described in [Cognito authentication](#cognito-authentication). Sign-in fails
+explicitly until the pool and client are configured; legacy JWTs are no longer
+accepted. No AWS IAM users or access keys are issued to app users.
 
-```powershell
-$JwtSecret = node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64'))"
-if ($LASTEXITCODE -ne 0 -or -not $JwtSecret) { throw "Could not generate JWT_SECRET." }
-(Get-Content .env) -replace '^JWT_SECRET=.*$', "JWT_SECRET=$JwtSecret" |
-  Set-Content .env -Encoding ascii
-```
-
-Do not reuse or commit this secret. Changing it invalidates existing sign-in tokens.
-
-Phone numbers are collected during registration and encrypted before storage. Generate and keep a separate 32-byte encryption key in the root `.env`:
+Phone numbers added through verification are encrypted before storage. Generate
+and keep a separate 32-byte encryption key in the root `.env`:
 
 ```powershell
 $VerificationKey = node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64'))"
@@ -66,7 +61,9 @@ if ($LASTEXITCODE -ne 0 -or -not $VerificationKey) { throw "Could not generate V
   Set-Content .env -Encoding ascii
 ```
 
-Keep this key stable and backed up securely; losing or rotating it makes previously saved phone numbers unreadable. Registration is rejected before creating an account if the key is missing or invalid.
+Keep this key stable and backed up securely; losing or rotating it makes previously
+saved phone numbers unreadable. Cognito registration itself does not require phone
+storage or phone verification.
 
 3. Start the Docker services:
 
@@ -96,6 +93,108 @@ npm --workspace @afrochef/mobile run start
 ```
 
 For Android emulators, set `EXPO_PUBLIC_API_URL=http://10.0.2.2:3000/api` in the app environment. iOS simulators can use `http://localhost:3000/api`; physical devices need the development computer's LAN IP address. See [Physical-device testing](#physical-device-testing-on-windows) for the Windows setup.
+
+## Cognito authentication
+
+Authentication is managed by Amazon Cognito User Pools, not AWS IAM or the local
+password hashes. The API proxies Cognito authentication over HTTPS, verifies access
+tokens against the pool's signing keys, issuer, app-client ID and access-token use,
+and calls `GetUser` to reject revoked sessions. Marketplace permissions always come
+from the current database role and active-account state, not client-supplied claims.
+An outage of Cognito fails closed with an explicit error. Cognito email ownership
+does not automatically complete the separate marketplace verification checklist.
+
+### AWS setup (required before rollout)
+
+Use the CloudFormation console to deploy [infra/cognito.yaml](infra/cognito.yaml)
+in your chosen AWS region, with a different stack per environment. This template
+creates resources and may incur AWS charges; it is not deployed automatically.
+Copy its `UserPoolId` and `ClientId` outputs into the API environment:
+
+```text
+COGNITO_USER_POOL_ID=us-east-2_yourPoolId
+COGNITO_CLIENT_ID=yourAppClientId
+CORS_ORIGINS=https://app.your-domain.example
+```
+
+The client has **no secret**, enables `ALLOW_USER_PASSWORD_AUTH`, revocation and
+refresh-token rotation (60-second retry grace), uses 15-minute access tokens and
+30-day refresh sessions, and does not remember devices. Do not enable MFA, passkeys,
+federated login or device remembering on this app client until corresponding UI
+challenge handling is added. The initial integration supports email/password,
+email confirmation and email-code password recovery only. IAM signing credentials
+are not needed by these Cognito runtime operations. Do not change the pool for an
+existing environment: stored subjects are scoped to that configured pool.
+
+The template's default Cognito email delivery has restrictive daily quotas.
+Configure production SES email delivery, a verified sender/domain and production
+sending access in Cognito before launch. Test confirmation and recovery delivery.
+Review Cognito quotas, pricing, abuse protection and alarm configuration before
+public launch. The pool is retained and deletion-protected.
+
+### Persistent sessions and browser deployment
+
+- iOS/Android: only the refresh token is persisted in Expo SecureStore. Access
+  tokens and profile data stay in memory and are restored by refreshing on startup.
+- Web: the refresh token is an HttpOnly, SameSite=Lax cookie scoped to `/api/auth`.
+  Production sets Secure. Access tokens stay in memory: **no passwords or bearer
+  tokens in localStorage**. Browser fetches include credentials, and session
+  endpoints validate an exact `CORS_ORIGINS` origin and client header.
+- Serve production web and API over HTTPS on the **same site**, for example
+  `app.example.com` and `api.example.com`, or reverse-proxy `/api` on the app host.
+  An unrelated web host and `onrender.com` API are cross-site and will not persist
+  this cookie. Configure custom domains/proxy before enabling browser sign-in.
+  Locally, use `localhost` for both browser app and API, not localhost plus a LAN
+  IP. Set the mobile app's `EXPO_PUBLIC_API_URL` accordingly.
+- Requests across bookings, payments, messaging, verification, reviews and seller
+  uploads obtain renewed access tokens automatically. Concurrent refreshes within
+  an app instance are coalesced. The session expires 30 days after the original
+  login; rotation does not extend that lifetime.
+- Sign-out revokes Cognito sessions (all devices when a valid access token is
+  available), clears the cookie/device refresh token, and clears in-memory access.
+  Passwords are never stored on the device. Network failures are surfaced so
+  users can retry rather than being told remote revocation succeeded.
+
+### Existing account migration
+
+The iOS 1.0.2 demo release uses the `testflight` build profile and channel.
+Coordinate its availability with the API cutover: older builds use legacy
+authentication and cannot sign in after this upgrade. This is a demo rollout,
+not a production launch; the staging pool uses Cognito's default email sender.
+
+Back up the database, deploy the API migration and the new app together, and
+configure Cognito before distributing the release. Old app clients and old JWT
+sessions are intentionally incompatible with this cutover; users sign in again.
+
+1. Select **Create / Migrate Account** with the **same email** as the old account
+   and choose a new password. The old password is not imported.
+2. Enter the email confirmation code, then sign in with the new password.
+3. Only after Cognito verifies email ownership does the API atomically bind the
+   immutable Cognito subject to the existing local user. IDs, seller profiles,
+   roles, bookings, payouts and media stay unchanged. The old bcrypt hash is
+   cleared on linking; new users never have a local password hash.
+4. If an account is already registered but unconfirmed, use **Verify Email /
+   Resend Confirmation Code**. If the password was forgotten or someone started
+   registration for that email, confirm email ownership and use **Forgot
+   Password?** to choose your own password. Unmigrated accounts must register and
+   confirm before Cognito recovery can send a reset code.
+
+Inactive accounts and conflicting existing identity links are rejected.
+**Administrator accounts are never automatically linked by email.** An operator
+must independently verify ownership, create/confirm the Cognito identity, and
+explicitly assign its subject to the existing admin record through an audited
+database operation. Do not promote public sign-ups to admin. Seeded demo users
+are local data only; their sample passwords no longer authenticate. Use a
+deliverable email and this migration process for test accounts.
+
+Authentication API:
+`POST /api/auth/register`, `/confirm`, `/resend-confirmation`, `/login`,
+`/forgot-password`, `/reset-password`, `/refresh`, `/logout`.
+Login/refresh/logout require `X-AfroChop-Client: web` with an allowed browser Origin
+or `X-AfroChop-Client: native` with no Origin. Native refresh/logout send
+`{ "refreshToken": "..." }`; browser refresh/logout send `{}` and use the cookie.
+Confirmation and reset accept `{ email, code }` and `{ email, code, password }`.
+No confirmation or reset operation signs the user in automatically.
 
 ## TestFlight deployment
 
@@ -261,9 +360,18 @@ Legacy food-gallery endpoints save validated HTTPS image or video URLs. Public b
 
 Seller marketing is separate from paid-order approval: public seller profiles and
 showcase photos do not require Stripe onboarding. Both seller dashboards now have
-an **Add/Change Profile Picture** control and a **Showcase Your Work** gallery with
-captions and removal controls. Farmer public profiles include the gallery; chef
-public profiles continue using their existing food-photo gallery. Existing
+an **Add/Change Profile Picture** control and a **Food & Farm Feed** with
+captions and removal controls. Sellers can select up to 10 photos or 3 videos per
+batch, preview each selection, and write an individual caption (up to 500 characters).
+Each item is a separate public post, not a multi-item album. Uploads run sequentially;
+on failure, successful posts stay published and only the remaining selections are
+retained for retry while the screen stays open. Selections are not persisted across
+app restarts. Additional batches are supported without a total gallery cap, subject
+to the existing per-minute limits (10 photos / 3 videos). Farmer and chef public
+profiles show newest-first feed cards with complete captions, optional upload dates,
+and 12 posts initially; **Show More Posts** reveals older posts. Videos are opened
+on demand, never autoplayed. This progressively renders the gallery but does not
+paginate the existing gallery API responses. Existing
 externally hosted image URLs remain supported.
 
 The API accepts authenticated multipart uploads through

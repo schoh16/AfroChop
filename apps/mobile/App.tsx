@@ -25,7 +25,7 @@ import { ChefWorkspace } from './components/ChefWorkspace';
 import { CustomerRequests } from './components/CustomerRequests';
 import { FarmerWorkspace } from './components/FarmerWorkspace';
 import { FarmersMarketplace } from './components/FarmersMarketplace';
-import { FoodMediaItem } from './components/FoodMediaItem';
+import { SellerGallery } from './components/SellerPhotos';
 import { LocationDropdowns } from './components/LocationDropdowns';
 import { Messaging,type MessagePartner } from './components/Messaging';
 import {
@@ -36,9 +36,9 @@ type ReviewSort,
 } from './components/Reviews';
 import { SharedAccountFlow,type AccountSession } from './components/SharedAccountFlow';
 import { authTokenStorage } from './lib/authTokenStorage';
+import { authenticatedFetch as fetch, isAccountSession } from './lib/session';
 import { avatarUrl } from './lib/avatar';
 import { marketingContactRequiresOptIn } from './lib/marketingRegions';
-import { marketplaceApi } from './lib/marketplaceApi';
 
 const featuredCountryCodes = ['NG', 'GH', 'CM', 'MA', 'ET', 'SN', 'KE', 'ZA'];
 const apiBaseUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000/api';
@@ -209,27 +209,19 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    void authTokenStorage.get()
-      .then(async (storedSession) => {
+    void authTokenStorage.get(apiBaseUrl)
+      .then((storedSession) => {
         if (!active || !storedSession) return;
-        const session = JSON.parse(storedSession) as {
-          token?: unknown;
-          role?: unknown;
-          name?: unknown;
-        };
-        if (typeof session.token !== 'string' ||
-            (session.role !== 'chef' && session.role !== 'customer' && session.role !== 'farmer')) {
+        const session: unknown = JSON.parse(storedSession);
+        if (!isAccountSession(session)) {
           throw new Error('Saved sign-in details are invalid. Please sign in again.');
         }
-        const account = await marketplaceApi(apiBaseUrl, session.token)<Omit<AccountSession, 'token'>>('/auth/me');
-        if (!active) return;
-        if (!['customer', 'chef', 'farmer'].includes(account.role)) throw new Error('Use an administrator sign-in for this account.');
-        if (account.requiresRoleSelection) setPendingAccount({ ...account, token: session.token });
-        else if (account.role === 'chef') setChefSessionToken(session.token);
-        else if (account.role === 'farmer') setFarmerSessionToken(session.token);
+        if (session.requiresRoleSelection) setPendingAccount(session);
+        else if (session.role === 'chef') setChefSessionToken(session.token);
+        else if (session.role === 'farmer') setFarmerSessionToken(session.token);
         else {
           setCustomerSessionToken(session.token);
-          setCustomerDisplayName(account.name);
+          setCustomerDisplayName(session.name);
         }
       })
       .catch((error: unknown) => {
@@ -1110,16 +1102,9 @@ export default function App() {
                 Review each dish’s known ingredients, major allergens, and reported cross-contact risks. Substitutions, shared equipment, and cross-contact may create risks. Ask the cook about any concern; no allergen-free guarantee is made.
               </Text>
             </View>
-            <View style={styles.profileGallery}>
-              {selectedChef.foodPhotos.map((photo) => (
-                <FoodMediaItem
-                  key={photo.id}
-                  uri={photo.imageUrl}
-                  type={photo.mediaType}
-                  caption={photo.caption}
-                />
-              ))}
-            </View>
+            <Text style={styles.cardTitle}>From the Kitchen</Text>
+            <Text style={styles.profileBio}>Photos, videos, and stories shared by this cook. Newest posts first.</Text>
+            <SellerGallery key={selectedChef.id} photos={selectedChef.foodPhotos} />
             <Text style={styles.cardTitle}>Menu</Text>
             {selectedChef.chefDishes.map((item) => (
               <View key={item.id} style={styles.menuItem}>

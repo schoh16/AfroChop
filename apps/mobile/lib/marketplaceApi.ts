@@ -1,3 +1,5 @@
+import { authenticatedFetch as fetch } from './session';
+
 export function marketplaceApi(apiBaseUrl: string, token?: string) {
   return async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const response = await fetch(`${apiBaseUrl}${path}`, {

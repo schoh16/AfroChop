@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
-import { LocationDropdowns } from './LocationDropdowns';
 import { SellerPhotos } from './SellerPhotos';
-import { AfroChopLogo, AuthInput, PasswordInput, PrimaryButton } from './AuthUi';
+import { AfroChopLogo, AuthInput, PrimaryButton } from './AuthUi';
 import {
   ChatMessage,
   FarmInquiry,
@@ -23,107 +22,6 @@ type FarmerProfile = {
   offersDelivery: boolean;
   produce: Produce[];
 };
-
-export function FarmerAuth({
-  apiBaseUrl,
-  countries,
-  isSignIn,
-  onBack,
-  onAuthenticated,
-}: {
-  apiBaseUrl: string;
-  countries: { code?: string; name: string }[];
-  isSignIn: boolean;
-  onBack: () => void;
-  onAuthenticated: (token: string, name: string) => void;
-}) {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [farmName, setFarmName] = useState('');
-  const [city, setCity] = useState('');
-  const [state, setState] = useState('');
-  const [countryCode, setCountryCode] = useState('US');
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  async function submit() {
-    setError(null);
-    if (!email.trim() || password.length < 8 ||
-        (!isSignIn && (!name.trim() || !farmName.trim() || !city.trim()))) {
-      setError(isSignIn
-        ? 'Enter your email and password.'
-        : 'Enter your name, farm name, city, email and a password of at least 8 characters.');
-      return;
-    }
-    setBusy(true);
-    try {
-      const anon = createFarmApi(apiBaseUrl);
-      const auth = await anon<{ token: string; name: string; role: string }>(
-        `/auth/${isSignIn ? 'login' : 'register'}`,
-        {
-          method: 'POST',
-          body: JSON.stringify(isSignIn
-            ? { email: email.trim(), password }
-            : { name: name.trim(), email: email.trim(), password, role: 'farmer' }),
-        },
-      );
-      if (auth.role !== 'farmer') throw new Error('This account is not registered as a farmer.');
-      if (!isSignIn) {
-        await createFarmApi(apiBaseUrl, auth.token)('/farmers/me/profile', {
-          method: 'PUT',
-          body: JSON.stringify({
-            farmName: farmName.trim(),
-            city: city.trim(),
-            state: state.trim() || undefined,
-            countryCode: countryCode || 'US',
-            offersPickup: true,
-          }),
-        });
-      }
-      onAuthenticated(auth.token, auth.name);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets keyboardDismissMode="on-drag">
-      <Pressable accessibilityRole="button" onPress={onBack} style={s.back}>
-        <Text style={s.link}>‹ Back</Text>
-      </Pressable>
-      <AfroChopLogo />
-      <Text style={s.title}>{isSignIn ? 'Welcome back, farmer' : 'Join as a local farmer'}</Text>
-      {!isSignIn ? (
-        <>
-          <AuthInput label="Your name" onChangeText={setName} value={name} />
-          <AuthInput label="Farm name" onChangeText={setFarmName} value={farmName} />
-          <LocationDropdowns
-            countries={countries}
-            apiBaseUrl={apiBaseUrl}
-            countryCode={countryCode}
-            countryName={countries.find(({ code }) => code === countryCode)?.name ?? ''}
-            state={state}
-            city={city}
-            onCountryChange={(code) => {
-              setCountryCode(code);
-              setState('');
-              setCity('');
-            }}
-            onStateChange={setState}
-            onCityChange={setCity}
-          />
-        </>
-      ) : null}
-      <AuthInput label="Email" autoCapitalize="none" keyboardType="email-address" onChangeText={setEmail} value={email} />
-      <PasswordInput onChangeText={setPassword} value={password} />
-      {error ? <Text style={s.error}>{error}</Text> : null}
-      <PrimaryButton label={isSignIn ? 'Sign in' : 'Create farmer account'} loading={busy} onPress={() => void submit()} />
-    </ScrollView>
-  );
-}
 
 export function FarmerWorkspace({
   token,

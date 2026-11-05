@@ -17,8 +17,12 @@ services:
         fromDatabase:
           name: afrochop-db
           property: connectionString
-      - key: JWT_SECRET
-        generateValue: true
+      - key: COGNITO_USER_POOL_ID
+        sync: false
+      - key: COGNITO_CLIENT_ID
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
       - key: VERIFICATION_ENCRYPTION_KEY
         generateValue: true
 

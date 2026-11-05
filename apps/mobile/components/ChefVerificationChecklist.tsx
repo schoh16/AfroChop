@@ -1,3 +1,4 @@
+import { authenticatedFetch as fetch } from '../lib/session';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { VerificationProgress } from './AuthUi';

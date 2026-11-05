@@ -6,7 +6,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { JwtService } from '@nestjs/jwt';
+import { CognitoService } from './cognito.service.js';
 import { Request } from 'express';
 import { UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -16,14 +16,10 @@ export interface AuthenticatedRequest extends Request {
   user: { sub: string; role: UserRole };
 }
 
-function isUserRole(value: unknown): value is UserRole {
-  return Object.values(UserRole).some((role) => role === value);
-}
-
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   constructor(
-    private readonly jwtService: JwtService,
+    private readonly cognito: CognitoService,
     private readonly prisma: PrismaService,
     private readonly reflector: Reflector = new Reflector(),
   ) {}
@@ -37,22 +33,12 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException('A bearer access token is required.');
     }
 
-    let payload: { sub?: unknown; role?: unknown };
-    try {
-      payload = await this.jwtService.verifyAsync<{ sub?: unknown; role?: unknown }>(token);
-    } catch {
-      throw new UnauthorizedException('The access token is invalid or expired.');
-    }
-
-    if (typeof payload.sub !== 'string' || !isUserRole(payload.role)) {
-      throw new UnauthorizedException('The access token is invalid or expired.');
-    }
-
+    const identity = await this.cognito.identity(token);
     const user = await this.prisma.user.findUnique({
-      where: { id: payload.sub },
-      select: { isActive: true, role: true, roleSelectedAt: true },
+      where: { cognitoSub: identity.sub },
+      select: { id: true, isActive: true, role: true, roleSelectedAt: true },
     });
-    if (!user?.isActive || user.role !== payload.role) {
+    if (!user?.isActive) {
       throw new UnauthorizedException('This account is inactive or its access has changed.');
     }
 
@@ -63,7 +49,7 @@ export class JwtAuthGuard implements CanActivate {
       throw new ForbiddenException('Choose how you will use AfroChop before continuing.');
     }
 
-    request.user = { sub: payload.sub, role: user.role };
+    request.user = { sub: user.id, role: user.role };
     return true;
   }
 }

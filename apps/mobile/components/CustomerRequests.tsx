@@ -1,3 +1,4 @@
+import { authenticatedFetch as fetch } from '../lib/session';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { MessagePartner } from './Messaging';

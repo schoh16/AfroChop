@@ -1,3 +1,4 @@
+import { authenticatedFetch as fetch } from '../lib/session';
 import * as Linking from 'expo-linking';
 import { useEffect, useState } from 'react';
 import {

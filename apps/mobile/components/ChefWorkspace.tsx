@@ -1,3 +1,4 @@
+import { authenticatedFetch as fetch } from '../lib/session';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
