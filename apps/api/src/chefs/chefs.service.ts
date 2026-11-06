@@ -97,6 +97,9 @@ export class ChefsService {
   }
 
   async saveProfile(userId: string, dto: ChefProfileDto) {
+    if (dto.serviceTypes?.includes(ServiceType.grocery_shopping)) {
+      throw new BadRequestException('Grocery shopping services are no longer available.');
+    }
     const existingProfile = await this.prisma.chefProfile.findUnique({
       where: { userId },
       select: {
@@ -564,6 +567,23 @@ export class ChefsService {
         ],
       });
     }
+    if (query.foodName) {
+      discoveryConstraints.push({
+        OR: [
+          { chefDishes: { some: {
+            ...dishFilter,
+            dish: {
+              name: { equals: query.foodName, mode: 'insensitive' },
+              ...(query.countryId ? { dishCountries: { some: { countryId: query.countryId } } } : {}),
+            },
+          } } },
+          { menuEntries: { some: {
+            name: { equals: query.foodName, mode: 'insensitive' },
+            ...(query.countryId ? { cuisineCountryId: query.countryId } : {}),
+          } } },
+        ],
+      });
+    }
     if (query.countryId) {
       discoveryConstraints.push({
         OR: [
@@ -721,7 +741,10 @@ export class ChefsService {
     ]);
 
     return {
-      items: chefs,
+      items: chefs.map((chef) => ({
+        ...chef,
+        serviceTypes: chef.serviceTypes.filter((type) => type !== ServiceType.grocery_shopping),
+      })),
       page,
       limit,
       total,
@@ -834,6 +857,9 @@ export class ChefsService {
       throw new NotFoundException('Chef profile not found.');
     }
 
-    return chef;
+    return {
+      ...chef,
+      serviceTypes: chef.serviceTypes.filter((type) => type !== ServiceType.grocery_shopping),
+    };
   }
 }

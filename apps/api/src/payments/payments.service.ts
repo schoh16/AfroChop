@@ -288,6 +288,7 @@ export class PaymentsService {
 
     if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
       const session = event.data.object as Stripe.Checkout.Session;
+      if (session.metadata?.groceryOrderId) return { received: true, ignored: true };
       if (session.payment_status === 'paid' && session.client_reference_id) {
         await this.markDepositPaid(session.client_reference_id, session.id);
       }

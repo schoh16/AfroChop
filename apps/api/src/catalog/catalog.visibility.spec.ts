@@ -4,6 +4,33 @@ import { ReviewsService } from '../reviews/reviews.service.js';
 import { publicChefWhere } from '../chefs/public-chef.js';
 
 describe('public chef visibility across discovery surfaces', () => {
+  it('lists sorted, distinct foods from public menus and legacy dish listings only', async () => {
+    const prisma = {
+      chefMenuEntry: { findMany: vi.fn().mockResolvedValue([
+        { name: 'Suya' }, { name: 'Jollof rice' }, { name: '' },
+      ]) },
+      chefDish: { findMany: vi.fn().mockResolvedValue([
+        { dish: { name: 'suya' } }, { dish: { name: 'Egusi soup' } },
+      ]) },
+    };
+    const service = new CatalogService(prisma as never);
+    const foods = await service.getAvailableFoods();
+    expect(foods.map((name) => name.toLowerCase())).toEqual(['egusi soup', 'jollof rice', 'suya']);
+    for (const model of [prisma.chefMenuEntry, prisma.chefDish]) {
+      expect(model.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { chef: publicChefWhere },
+      }));
+    }
+  });
+
+  it('returns an empty food dropdown catalog when no public cooks have foods', async () => {
+    const prisma = {
+      chefMenuEntry: { findMany: vi.fn().mockResolvedValue([]) },
+      chefDish: { findMany: vi.fn().mockResolvedValue([]) },
+    };
+    expect(await new CatalogService(prisma as never).getAvailableFoods()).toEqual([]);
+  });
+
   it('includes setup-complete pending chefs in location suggestions and highlights', async () => {
     const prisma = {
       chefServiceArea: { findMany: vi.fn().mockResolvedValue([]) },

@@ -11,6 +11,7 @@ import {
   BookingStatus,
   Prisma,
   QuoteStatus,
+  ServiceType,
   UserRole,
   UserVerificationType,
   VerificationStatus,
@@ -127,6 +128,9 @@ export class QuotesService {
   }
 
   async createBookingRequest(customerId: string, dto: BookingRequestDto) {
+    if (dto.serviceType === ServiceType.grocery_shopping) {
+      throw new BadRequestException('Grocery shopping services are no longer available.');
+    }
     const requestedDate = new Date(dto.requestedDate);
     if (requestedDate <= new Date()) {
       throw new BadRequestException('The requested service time must be in the future.');

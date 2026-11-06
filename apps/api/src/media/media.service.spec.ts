@@ -78,6 +78,31 @@ describe('seller photo storage', () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it('stores optimized grocery product images under the grocery media prefix', async () => {
+    const { service } = setup();
+    const result = await service.uploadGroceryProductImage('owner', await photo());
+    expect(result.imageUrl).toMatch(/^https:\/\/images\.example\.test\/grocery\/owner\/products\/.+\.jpg$/);
+    const uploaded = send.mock.calls[0][0].input;
+    const metadata = await sharp(uploaded.Body).metadata();
+    expect(uploaded.ContentType).toBe('image/jpeg');
+    expect(metadata.format).toBe('jpeg');
+    expect(metadata.width).toBe(20);
+    expect(metadata.height).toBe(10);
+    expect(metadata.exif).toBeUndefined();
+  });
+
+  it('rejects invalid grocery product images before storage', async () => {
+    const { service } = setup();
+    await expect(service.uploadGroceryProductImage('owner', undefined)).rejects.toThrow('JPEG or PNG');
+    await expect(service.uploadGroceryProductImage('owner', {
+      ...await photo(), size: MAX_PHOTO_BYTES + 1,
+    })).rejects.toThrow('JPEG or PNG');
+    await expect(service.uploadGroceryProductImage('owner', {
+      buffer: Buffer.from('not an image'), size: 12, mimetype: 'image/jpeg',
+    })).rejects.toThrow('could not be read');
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it('reports missing storage configuration instead of pretending an upload succeeded', async () => {
     const { service } = setup('chef', false);
     await expect(service.upload('owner', await photo(), true)).rejects.toThrow('not configured');

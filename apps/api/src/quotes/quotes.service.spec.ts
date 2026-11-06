@@ -51,6 +51,22 @@ describe('QuotesService food-safety gates', () => {
     service = module.get(QuotesService);
   });
 
+  it('rejects new grocery-shopping bookings before looking up cooks or creating records', async () => {
+    await expect(service.createBookingRequest('customer-id', {
+      chefId: 'chef-id',
+      serviceType: ServiceType.grocery_shopping,
+      requestedDate: new Date(Date.now() + 48 * 60 * 60_000).toISOString(),
+      jurisdictionCode: 'US-NY',
+      durationMinutes: 60,
+      disclosedAllergens: [],
+      dietaryRestrictions: [],
+      allergyNoticeAcknowledged: true,
+      allergyNoticeVersion: 'v1',
+    })).rejects.toThrow('Grocery shopping services are no longer available.');
+    expect(prisma.chefProfile.findFirst).not.toHaveBeenCalled();
+    expect(prisma.bookingRequest.create).not.toHaveBeenCalled();
+  });
+
   it('requires the current allergy notice acknowledgment before creating a request', async () => {
     await expect(
       service.createBookingRequest('customer-id', {

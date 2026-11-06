@@ -142,6 +142,41 @@ export class MediaService {
     }
   }
 
+  async uploadGroceryProductImage(userId: string, file: UploadedPhoto | undefined) {
+    if (!file || !file.buffer.length || file.size > MAX_PHOTO_BYTES ||
+        !['image/jpeg', 'image/png'].includes(file.mimetype)) {
+      throw new BadRequestException('Choose a JPEG or PNG photo up to 2 MB.');
+    }
+    let image: Buffer;
+    try {
+      const decoder = sharp(file.buffer, { limitInputPixels: 20_000_000, animated: false });
+      const metadata = await decoder.metadata();
+      if (!['jpeg', 'png'].includes(metadata.format ?? '') || (metadata.pages ?? 1) > 1) {
+        throw new Error('Unsupported image format.');
+      }
+      image = await decoder.rotate()
+        .resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 80 }).toBuffer();
+    } catch {
+      throw new BadRequestException('This photo could not be read. Choose a non-animated JPEG or PNG under 20 megapixels.');
+    }
+    const { client, bucket, publicBase } = this.storage();
+    const key = `grocery/${userId}/products/${randomUUID()}.jpg`;
+    const imageUrl = `${publicBase}/${key}`;
+    try {
+      await client.send(new PutObjectCommand({
+        Bucket: bucket, Key: key, Body: image, ContentType: 'image/jpeg',
+        CacheControl: 'public, max-age=31536000, immutable',
+      }));
+      return { imageUrl };
+    } catch (error) {
+      this.logger.error('Grocery product photo storage upload failed.', error instanceof Error ? error.stack : undefined);
+      throw new ServiceUnavailableException('Photo storage is temporarily unavailable. Please try again.');
+    } finally {
+      client.destroy();
+    }
+  }
+
   async remove(userId: string, photoId: string) {
     const { chefId, farmerId } = await this.seller(userId);
     const photo = chefId

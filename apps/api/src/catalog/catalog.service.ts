@@ -161,6 +161,26 @@ const marketCountries = [
 
 @Injectable()
 export class CatalogService {
+  async getAvailableFoods() {
+    const [menuEntries, chefDishes] = await Promise.all([
+      this.prisma.chefMenuEntry.findMany({
+        where: { chef: publicChefWhere },
+        select: { name: true },
+        distinct: ['name'],
+      }),
+      this.prisma.chefDish.findMany({
+        where: { chef: publicChefWhere },
+        select: { dish: { select: { name: true } } },
+        distinct: ['dishId'],
+      }),
+    ]);
+    const names = new Map<string, string>();
+    for (const name of [...menuEntries.map((entry) => entry.name), ...chefDishes.map((entry) => entry.dish.name)]) {
+      if (name.trim()) names.set(name.toLowerCase(), name);
+    }
+    return [...names.values()].sort((a, b) => a.localeCompare(b));
+  }
+
   constructor(private readonly prisma: PrismaService) {}
 
   getMarketCountries() {

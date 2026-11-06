@@ -1,6 +1,6 @@
 # AfroChop
 
-AfroChop is a modern African food and personal chef marketplace. The project includes a React Native Expo mobile app, a NestJS API, PostgreSQL/PostGIS, Redis, and local Docker infrastructure, with AfroChop branding and Phase 3 catalog/marketplace foundations for discovery, chef profiles, messaging, and quotes.
+AfroChop connects customers with African chefs and cooks for cooked food and cooking services. Customers can discover local cooks, explore menus, message cooks, and request bookings. Grocery sales and cook grocery-shopping services are no longer offered. The project includes a React Native Expo mobile app, a NestJS API, PostgreSQL/PostGIS, Redis, and local Docker infrastructure.
 
 Brand tagline: **Find Your Cook. Taste Your Culture.** The mobile home screen uses AfroChop's forest green, golden spice, warm cream, terracotta, and rich brown palette.
 
@@ -197,8 +197,8 @@ Run EAS commands from `apps/mobile`, not the repository root; the mobile
 configuration uses the existing `com.afrochop.app` App Store application.
 The `testflight` profile creates a store-signed build connected to
 `https://afrochop-api.onrender.com/api`, with a separate `testflight` update
-channel. App version `1.0.3` separates its native runtime from earlier builds,
-including the staging branch's `1.0.2` release.
+channel. App version `1.0.4` separates the dashboard's native navigation runtime
+from earlier builds, including the `1.0.3` TestFlight release.
 Mobile build profiles set `SHARP_IGNORE_GLOBAL_LIBVIPS=1` so the API's
 workspace dependency uses prebuilt Sharp binaries rather than detecting the
 Mac builder's global libvips and attempting an unnecessary source build.
@@ -354,6 +354,176 @@ Chef search supports query text, African cuisine country, dish, service type, ci
 
 Legacy food-gallery endpoints save validated HTTPS image or video URLs. Public binary photo uploads are described above; private verification-document storage, signed document uploads, malware scanning and retention deletion are still not wired. Permits remain quarantined until a trusted scanner reports a clean object. Videos must be directly playable by Expo Video, and short duration is not enforced. Optional Twilio order texts require backend credentials and a saved, opted-in customer phone number; configure Messaging Service STOP handling before enabling them. Delivery failures are logged without rolling back order updates. Quote requests persist the selected service date/time, duration, dietary details and versioned allergy acknowledgment. Accepting a quote reserves the chef's overlapping slot for 24 hours. Customers can review quotes, pay through hosted Checkout, request refund review, confirm receipt after the cook signals completion, and submit eligible reviews. In-home requests can select an owned, verified, unexpired service address; submitting an address does not approve it. See payment operations and verification below for configuration and remaining launch requirements.
 
+## Administrator dashboard (mobile and web)
+
+Name and email are required through account registration and are supplied to staff
+from the authenticated applicant's account. Additional cook application fields
+are optional, including the visit address. Cooks can submit without these additional
+details and staff can follow up using their account email.
+The form has no visit country-code field, and phone numbers do not require
+an international prefix. When supplied, cooking experience must be whole years
+(0–100); country of origin and call/meeting availability are optional.
+These details are encrypted separately from the visit
+address and revealed together in the audited, administrator-only application
+view. They are not added to public profiles or staff notification emails.
+Apply migration `20261106193000_cook_application_details` before deploying this
+change. Older applications remain readable and display a notice that these
+additional details were not collected.
+
+Sign in with an existing, active Cognito-linked administrator account to open the
+private cook-application dashboard. On web its route is `/admin`; mobile uses the
+same screen and redirects administrators there after sign-in. Customers, cooks,
+and farmers cannot access the administrative API. Administrator is not a public
+signup/role-selection option. A trusted operator must provision administrator
+access separately in the backend; this change does not create an administrator,
+promote the first registrant, or automatically link legacy administrator accounts.
+
+Customer setup uses a multi-select country-cuisine dropdown for favorite cuisines;
+food discovery uses a single-select country-cuisine dropdown with an All cuisines
+option. The setup's former "What are you craving?" dish choices have been removed.
+The Food dropdown lists distinct food names from published cooks' menu entries
+and dish listings (`GET /api/catalog/available-foods`), excluding private profiles.
+Selecting a food searches for that exact food name (case-insensitive), combined
+with country cuisine and location filters; All foods clears the food filter.
+When a cuisine is selected, the matching food must belong to that cuisine.
+Customer location and cuisine preferences are restored from device storage scoped
+to both the signed-in user ID and API environment. The former unscoped preferences
+key is not migrated because it cannot be safely attributed to an account. Customers
+can refresh available foods without restarting the app; resetting discovery clears
+the food filter too.
+
+The dashboard provides status filters, name/email/reference search, manual refresh,
+application details, audited on-demand access to the private visit address, staff
+notes, visit scheduling/rescheduling, interview completion, rejection, and profile
+publication. Dates are entered in the administrator device's displayed time zone
+and sent as UTC timestamps. Home addresses are not cached in device storage and
+are hidden on leaving the detail screen or backgrounding the app.
+
+The Verification and refund reviews screen exposes pending user verification,
+credential, permit, and service/jurisdiction decisions through the existing audited
+API. It also shows the latest 100 booking payments, refund reasons and outcomes,
+refund approval/rejection/retry, and payment reconciliation. Every submitted decision
+requires confirmation and review notes (at least 10 characters for decisions);
+backend evidence, identity-provider, compliance and payment checks remain enforced.
+This is not a grocery-refund workflow or a raw document/incident review console.
+
+Grocery product photo removal sends an explicit null image URL so it persists.
+Product editing and cancellation are disabled while the image picker/upload is busy.
+
+The **Approved / setup complete** tracker counts saved applications in the
+Published (`profile_setup`) stage across the entire queue, independent of search
+and status filters. It updates after publication and on refresh; tap it to view
+approved cooks and their setup completion dates. Loading or failed requests show
+Loading or Unavailable rather than a misleading zero.
+
+Publication requires a cook-prepared profile photo and at least one food, plus
+the ordered visit/interview workflow. The dashboard does not edit profiles, menus,
+or media on the cook's behalf. Existing service/compliance checks still apply.
+Every update has an explicit confirmation; rejected cooks can resubmit themselves.
+Reviews also check the status originally loaded by the dashboard and reject
+conflicting staff transitions rather than overwriting a newer review.
+
+Expo Router is the app entry point, with routes in `apps/mobile/src/app/` and shared
+UI outside the route directory. Existing marketplace workspaces remain available.
+Root npm overrides keep Router's native font/animation peers on SDK 57-compatible
+versions rather than allowing optional peers to resolve to the newest SDK.
+The added native navigation dependencies require a new signed mobile build
+before shipping this dashboard; do not OTA-update the old native runtime.
+For browser session persistence, retain the HTTPS same-site web/API setup described
+above. This dashboard contains private information and should not be publicly cached.
+
+## Retired grocery infrastructure (historical reference only)
+
+The customer store and administrator store screens have been removed. Old
+`/grocery` links redirect to chef discovery. The public grocery API returns a
+closed, empty catalog; quotes, checkout, store settings, product edits, and
+uploads return HTTP 410. New cook grocery-shopping offerings, booking requests,
+permit submissions, searches, and service approvals are rejected.
+
+Historical database models, orders, payment webhooks, reconciliation, and
+authorized history/fulfillment endpoints remain to avoid stranding prior payments.
+Existing historical transactions must be handled through authorized backend
+operations and support; there is no grocery dashboard in the app.
+Keep any credentials required to settle existing payments. Do not enable new
+grocery payments or follow the former launch instructions below.
+
+The following describes the retired implementation, not current app features:
+
+Grocery sales belong exclusively to AfroChop. Independent farmer registration and
+role selection are disabled, the farmer API module is no longer mounted, and
+public seller uploads are limited to cooks. Historical farmer data remains intact.
+Approved cooks retain their cooking services and profile marketing.
+
+Customers can open `/grocery` in the mobile/web app or enter the store directly
+from the customer home screen. Grocery shopping and cooked-food requests use
+separate carts and checkouts. The administrator dashboard
+includes grocery settings, products, order reconciliation, private shipping
+addresses, and fulfillment tracking. Grocery mutations require an active admin
+whose UUID exactly matches `GROCERY_OWNER_USER_ID`; other admins cannot sell.
+The owner can choose and upload an optional product photo from the product editor.
+Uploads are resized, converted to JPEG, limited to 2 MB, and stored under the
+grocery product media path using the configured photo-storage bucket/CDN.
+When the active catalog is empty, the store displays clearly marked African
+grocery product ideas as non-purchasable placeholders. They are not inventory,
+and their ingredients, allergens, pricing, packaging, and shipping details must
+be verified before actual products are listed.
+
+An authorized operator can provision an **existing verified, active Cognito-linked
+account** using `node scripts/provision-owner.mjs <account-email>` from `apps/api`
+with a private database connection. The default is a dry run; add `--apply` only
+after checking the displayed UUID. Active bookings and held/disputed money block
+promotion. Set that UUID in the backend's `GROCERY_OWNER_USER_ID`, then sign out/in.
+This script is not a public API and never creates an account automatically.
+
+Before opening the store:
+
+- Apply migration `20261106020000_owner_grocery_store` using the existing migration
+  deployment command. It is additive and preserves historical farmer records.
+- Configure `VERIFICATION_ENCRYPTION_KEY`, the Stripe secret key, a separate
+  `GROCERY_STRIPE_WEBHOOK_SECRET`,
+  `SHIPPO_API_TOKEN`, and an HTTPS `GROCERY_CHECKOUT_RETURN_URL` pointing to `/grocery`
+  on your published website. Keep credentials and addresses out of tracked files.
+- Enter the **actual** full dispatch/pickup address privately in owner settings.
+  La Plata, MD alone cannot produce a valid shipping quote.
+- Add only shelf-stable groceries with prices in integer cents, ingredients,
+  allergen/cross-contact notices, and the correct Stripe product tax codes.
+- Configure Stripe Tax origin and applicable registrations; automatic tax shown
+  in Checkout does not replace the merchant's registration obligations.
+- Register `/api/grocery/webhooks/stripe` for `checkout.session.completed` and
+  `checkout.session.expired`, with its signing secret in `GROCERY_STRIPE_WEBHOOK_SECRET`.
+  Booking payments retain their existing endpoint and `STRIPE_WEBHOOK_SECRET`.
+  Distinct Stripe endpoints have distinct signing secrets.
+- Test purchase, expiration, reconciliation and fulfillment before deliberately
+  setting `GROCERY_LIVE_PAYMENTS_ENABLED=true` in a production backend.
+
+Pickup has no shipping fee. Shipping rates are calculated by Shippo for the 50 US
+states and DC, including Alaska and Hawaii, subject to carrier service availability.
+There is no invented universal flat fee and no unsupported international shipment.
+Each unit is a separately packed parcel using the entered **packed** weight and
+dimensions; carts are capped at 20 units. Multi-parcel support depends on connected
+carriers. Missing configuration or unavailable rates produces an explicit error.
+No labels are purchased automatically. Buy labels in Shippo and enter tracking
+before marking a paid shipping order shipped; pickup orders can be marked collected.
+
+Quotes expire after 10 minutes. Checkout locks prices/rates/address and reserves
+inventory atomically. Stripe calculates tax before charging. Owner stock edits
+reject stale versions instead of overwriting inventory reserved by another checkout.
+Signed payment events update orders idempotently. A minute-interval reconciliation
+loop checks known sessions after checkout expiry (35 minutes), recovering payments
+or releasing unpaid expired reservations if webhooks were missed.
+Ambiguous session-creation failures **retain reserved stock**, report an explicit
+error, and require retrying the same order promptly or locating its checkout in
+Stripe and entering its session ID in the owner dashboard. Never release stock
+blindly or fulfill an unconfirmed payment. Refunds, disputed orders, labels and
+customer shipping emails must currently be handled by the operator in Stripe/Shippo;
+there is no automated refund/cancellation dashboard in this first version.
+
+Shipping and origin addresses are encrypted at rest, never included in public
+catalog/order lists, and private shipping-address reads are audited. The origin is
+disclosed only to the owner, shipping provider and customers selecting pickup.
+Customer-entered address and owner settings stay in component memory (not persistent
+device storage); revealed order addresses clear when leaving or backgrounding.
+
 ## Staff cook-application alerts
 
 After a new cook application (or a rejected application's resubmission) commits,
@@ -401,7 +571,11 @@ the new service/configuration. No mobile release or database migration is needed
 for these alerts. Real email/SMS delivery must be verified with opted-in test
 recipients before launch.
 
-## Public seller photos (chefs, cooks, gardeners and farmers)
+## Public cook photos and historical seller media
+
+Only cooks can upload seller media in the owner-operated store model. Farmer
+HTTP routes and independent grocery sales are disabled; farmer storage/schema
+details below describe preserved historical data rather than active selling APIs.
 
 Seller marketing is separate from paid-order approval: public seller profiles and
 showcase photos do not require Stripe onboarding. Both seller dashboards now have
@@ -487,7 +661,7 @@ objects currently require an operator retention/cleanup policy.
 
 ### Direct showcase video uploads
 
-Chefs and farmers can choose a local MP4 or MOV from the profile showcase,
+Cooks can choose a local MP4 or MOV from the profile showcase,
 preview it, add a caption (maximum 500 characters), and publish it. The API
 accepts authenticated multipart `POST /api/media/gallery/video` with `file` and
 optional `caption`. The maximum file size is 50 MiB (52,428,800 bytes, shown as
@@ -556,7 +730,7 @@ roles and creates a pending account with a placeholder customer role. That
 placeholder does not authorize customer actions before selection.
 
 `GET /api/auth/me` reports the current account and selection requirement;
-`POST /api/auth/me/role` accepts `{ "role": "customer" | "chef" | "farmer" }`
+`POST /api/auth/me/role` accepts `{ "role": "customer" | "chef" }`
 and returns a fresh session/token. Role selection is persisted once and cannot
 be changed through this endpoint afterward. Retrying the same selection safely
 returns a session; selecting another role returns a conflict. Administrators

@@ -4,11 +4,15 @@ import {
   IsBoolean,
   IsDateString,
   IsEnum,
+  IsNotIn,
+  IsInt,
   IsOptional,
   IsString,
   IsUUID,
   Matches,
+  Max,
   MaxLength,
+  Min,
   MinLength,
 } from 'class-validator';
 import {
@@ -83,39 +87,65 @@ export class ChefStatusReviewDto {
 }
 
 export class ChefApplicationDto {
+  @IsOptional()
   @IsString()
-  @MinLength(2)
+  @MaxLength(40)
+  phoneNumber?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  experienceYears?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  countryOfOrigin?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  meetingAvailability?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(200)
-  line1: string;
+  line1?: string;
 
   @IsOptional()
   @IsString()
   @MaxLength(200)
   line2?: string;
 
+  @IsOptional()
   @IsString()
-  @MinLength(2)
   @MaxLength(100)
-  city: string;
+  city?: string;
 
+  @IsOptional()
   @IsString()
-  @MinLength(2)
   @MaxLength(100)
-  region: string;
+  region?: string;
 
+  @IsOptional()
   @IsString()
-  @MinLength(2)
   @MaxLength(32)
-  postalCode: string;
+  postalCode?: string;
 
+  @IsOptional()
   @IsString()
   @Matches(/^[A-Za-z]{2}$/)
-  countryCode: string;
+  countryCode?: string;
 }
 
 export class ChefApplicationReviewDto {
   @IsEnum(ChefApplicationStatus)
   status: ChefApplicationStatus;
+
+  @IsOptional()
+  @IsEnum(ChefApplicationStatus)
+  expectedStatus?: ChefApplicationStatus;
 
   @IsOptional()
   @IsDateString()
@@ -133,6 +163,7 @@ export class ComplianceRuleDto {
   jurisdictionCode: string;
 
   @IsEnum(ServiceType)
+  @IsNotIn([ServiceType.grocery_shopping], { message: 'Grocery shopping services are no longer available.' })
   serviceType: ServiceType;
 
   @IsBoolean()
@@ -221,6 +252,7 @@ export class ChefCredentialDto {
 
   @IsOptional()
   @IsEnum(ServiceType)
+  @IsNotIn([ServiceType.grocery_shopping], { message: 'Grocery shopping services are no longer available.' })
   serviceType?: ServiceType;
 
   @IsOptional()
@@ -249,6 +281,7 @@ export class ChefCredentialReviewDto {
 
 export class ChefServiceApprovalDto {
   @IsEnum(ServiceType)
+  @IsNotIn([ServiceType.grocery_shopping], { message: 'Grocery shopping services are no longer available.' })
   serviceType: ServiceType;
 
   @IsString()

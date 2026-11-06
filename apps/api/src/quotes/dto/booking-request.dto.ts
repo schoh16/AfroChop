@@ -5,6 +5,7 @@ import {
   IsBoolean,
   IsDateString,
   IsEnum,
+  IsNotIn,
   IsInt,
   IsNumber,
   IsOptional,
@@ -25,6 +26,7 @@ export class BookingRequestDto {
   serviceAddressId?: string;
 
   @IsEnum(ServiceType)
+  @IsNotIn([ServiceType.grocery_shopping], { message: 'Grocery shopping services are no longer available.' })
   serviceType: ServiceType;
 
   @IsDateString()

@@ -6,6 +6,9 @@ apps/api/node_modules
 .gitignore
 .env
 **/.env
+.env.*
+**/.env.*
+!.env.example
 Dockerfile
 README.md
 npm-debug.log

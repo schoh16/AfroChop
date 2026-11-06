@@ -42,6 +42,22 @@ describe('ChefsService profile setup', () => {
     service = module.get(ChefsService);
   });
 
+  it('rejects new grocery-shopping offerings without changing saved profiles', async () => {
+    await expect(service.saveProfile('chef-user-id', {
+      displayName: 'Chef Amara', serviceTypes: ['grocery_shopping'],
+    })).rejects.toThrow('Grocery shopping services are no longer available.');
+    expect(prisma.chefProfile.upsert).not.toHaveBeenCalled();
+  });
+
+  it('hides persisted grocery-shopping services in discovery and direct profiles', async () => {
+    const chef = { id: 'chef-id', serviceTypes: ['prepared_meals', 'grocery_shopping'] };
+    prisma.$transaction.mockResolvedValue([[chef], 1]);
+    expect((await service.search({})).items[0].serviceTypes).toEqual(['prepared_meals']);
+    prisma.chefProfile.findFirst.mockResolvedValue(chef);
+    expect((await service.getPublicProfile('chef-id')).serviceTypes).toEqual(['prepared_meals']);
+    expect(chef.serviceTypes).toEqual(['prepared_meals', 'grocery_shopping']);
+  });
+
   it('saves a chef profile without requiring Stripe payout setup', async () => {
     const profile = await service.saveProfile('chef-user-id', {
       displayName: 'Chef Amara',
@@ -133,8 +149,44 @@ describe('ChefsService profile setup', () => {
     });
   });
 
+  it('filters by an offered food name, not the cook name or biography', async () => {
+    await service.search({ foodName: 'Jollof rice', city: 'Brooklyn' });
+    const [args] = prisma.chefProfile.findMany.mock.calls[0];
+    expect(args.where.AND).toEqual([{
+      OR: [
+        { chefDishes: { some: { dish: { name: { equals: 'Jollof rice', mode: 'insensitive' } } } } },
+        { menuEntries: { some: { name: { equals: 'Jollof rice', mode: 'insensitive' } } } },
+      ],
+    }]);
+    expect(args.where.serviceAreas.some.city).toEqual({ equals: 'Brooklyn', mode: 'insensitive' });
+    expect(prisma.chefProfile.count).toHaveBeenCalledWith({ where: args.where });
+  });
+
+  it('requires the selected food itself to match the selected cuisine', async () => {
+    prisma.country.findUnique.mockResolvedValue({ name: 'Nigeria' });
+    await service.search({ foodName: 'Jollof rice', countryId: 'country-id' });
+    const [args] = prisma.chefProfile.findMany.mock.calls[0];
+    expect(args.where.AND[0]).toEqual({
+      OR: [
+        { chefDishes: { some: { dish: {
+          name: { equals: 'Jollof rice', mode: 'insensitive' },
+          dishCountries: { some: { countryId: 'country-id' } },
+        } } } },
+        { menuEntries: { some: {
+          name: { equals: 'Jollof rice', mode: 'insensitive' }, cuisineCountryId: 'country-id',
+        } } },
+      ],
+    });
+  });
+
+  it('does not add a food constraint when All foods is selected', async () => {
+    await service.search({ foodName: '' });
+    const [args] = prisma.chefProfile.findMany.mock.calls[0];
+    expect(args.where).not.toHaveProperty('AND');
+  });
+
   it('uses the same visibility rules on direct profile links', async () => {
-    prisma.chefProfile.findFirst.mockResolvedValue({ id: 'pending-chef' });
+    prisma.chefProfile.findFirst.mockResolvedValue({ id: 'pending-chef', serviceTypes: [] });
     await service.getPublicProfile('pending-chef');
     expect(prisma.chefProfile.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -205,6 +257,7 @@ describe('ChefsService profile setup', () => {
       id: 'chef-profile-id',
       menuEntries: [],
       menuTemplates: [],
+      serviceTypes: [],
     });
 
     await service.getPublicProfile('chef-profile-id');

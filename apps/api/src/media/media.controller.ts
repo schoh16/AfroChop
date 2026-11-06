@@ -23,7 +23,7 @@ class PhotoDto {
 
 @Controller('media')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.chef, UserRole.farmer)
+@Roles(UserRole.chef)
 export class MediaController {
   constructor(private readonly media: MediaService) {}
 

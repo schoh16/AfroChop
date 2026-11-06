@@ -1,12 +1,14 @@
 import { Type } from 'class-transformer';
 import {
   IsEnum,
+  IsNotIn,
   IsInt,
   IsNumber,
   IsOptional,
   IsString,
   IsUUID,
   Max,
+  MaxLength,
   Min,
 } from 'class-validator';
 import { ServiceType } from '@prisma/client';
@@ -15,6 +17,11 @@ export class ChefSearchDto {
   @IsOptional()
   @IsString()
   q?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  foodName?: string;
 
   @IsOptional()
   @IsString()
@@ -44,6 +51,7 @@ export class ChefSearchDto {
 
   @IsOptional()
   @IsEnum(ServiceType)
+  @IsNotIn([ServiceType.grocery_shopping], { message: 'Grocery shopping services are no longer available.' })
   serviceType?: ServiceType;
 
   @IsOptional()

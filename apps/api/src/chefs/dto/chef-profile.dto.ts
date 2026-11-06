@@ -1,6 +1,8 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
+  ArrayNotContains,
+  IsNotIn,
   IsBoolean,
   IsArray,
   IsDateString,
@@ -57,6 +59,7 @@ export class ChefProfileDto {
   @IsArray()
   @ArrayMaxSize(7)
   @IsEnum(ServiceType, { each: true })
+  @ArrayNotContains([ServiceType.grocery_shopping], { message: 'Grocery shopping services are no longer available.' })
   serviceTypes?: ServiceType[];
 
   @IsOptional()
@@ -218,6 +221,7 @@ export class ChefPermitDto {
   jurisdictionCode: string;
 
   @IsEnum(ServiceType)
+  @IsNotIn([ServiceType.grocery_shopping], { message: 'Grocery shopping services are no longer available.' })
   serviceType: ServiceType;
 
   @IsString()

@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
+import { z } from 'zod';
 import { createCipheriv, createHmac, hkdfSync, randomBytes } from 'node:crypto';
 import {
   ChefCredentialType,
@@ -130,14 +131,11 @@ export class SafetyService {
     }
 
     const encryptionKey = this.verificationEncryptionKey();
-    const countryCode = dto.countryCode.trim().toUpperCase();
-    const line1 = dto.line1.trim();
-    const city = dto.city.trim();
-    const region = dto.region.trim();
-    const postalCode = dto.postalCode.trim();
-    if (!line1 || !city || !region || !postalCode) {
-      throw new BadRequestException('Enter a complete home visit address.');
-    }
+    const countryCode = dto.countryCode?.trim().toUpperCase() ?? '';
+    const line1 = dto.line1?.trim() ?? '';
+    const city = dto.city?.trim() ?? '';
+    const region = dto.region?.trim() ?? '';
+    const postalCode = dto.postalCode?.trim() ?? '';
     const address = JSON.stringify({
       line1,
       line2: dto.line2?.trim() || null,
@@ -146,12 +144,27 @@ export class SafetyService {
       postalCode,
       countryCode,
     });
+    const applicantDetails = {
+      phoneNumber: dto.phoneNumber?.trim() ?? '',
+      experienceYears: dto.experienceYears ?? null,
+      countryOfOrigin: dto.countryOfOrigin?.trim() ?? '',
+      meetingAvailability: dto.meetingAvailability?.trim() ?? '',
+    };
+    if (applicantDetails.experienceYears !== null &&
+        (!Number.isInteger(applicantDetails.experienceYears) ||
+        applicantDetails.experienceYears < 0 || applicantDetails.experienceYears > 100)) {
+      throw new BadRequestException('Cooking experience must be a whole number from 0 to 100 when provided.');
+    }
+    const encryptedApplicantDetails = this.encryptVerificationValue(
+      JSON.stringify(applicantDetails), encryptionKey,
+    );
 
     const submitted = await this.prisma.$transaction(async (transaction) => {
       const application = chef.application
         ? await transaction.chefApplication.update({
             where: { id: chef.application.id },
             data: {
+              encryptedApplicantDetails,
               encryptedHomeAddress: this.encryptVerificationValue(
                 address,
                 encryptionKey,
@@ -175,6 +188,7 @@ export class SafetyService {
         : await transaction.chefApplication.create({
             data: {
               chefId: chef.id,
+              encryptedApplicantDetails,
               encryptedHomeAddress: this.encryptVerificationValue(
                 address,
                 encryptionKey,
@@ -244,7 +258,10 @@ export class SafetyService {
         adminNotes: true,
         chef: {
           select: {
+            id: true,
             displayName: true,
+            profileImageUrl: true,
+            menuEntries: { select: { id: true, name: true } },
             user: {
               select: {
                 id: true,
@@ -265,6 +282,7 @@ export class SafetyService {
       select: {
         id: true,
         encryptedHomeAddress: true,
+        encryptedApplicantDetails: true,
         chef: { select: { userId: true } },
       },
     });
@@ -279,7 +297,23 @@ export class SafetyService {
         targetId: application.id,
       },
     });
-    return this.readAddress(application.encryptedHomeAddress);
+    let applicantDetails = null;
+    if (application.encryptedApplicantDetails) {
+      const result = z.object({
+        phoneNumber: z.string(),
+        experienceYears: z.number().int().min(0).max(100).nullable(),
+        countryOfOrigin: z.string(),
+        meetingAvailability: z.string(),
+      }).safeParse(JSON.parse(decryptVerificationValue(
+        application.encryptedApplicantDetails,
+        this.config.get<string>('VERIFICATION_ENCRYPTION_KEY'),
+      )));
+      if (!result.success) {
+        throw new ServiceUnavailableException('Stored applicant details cannot be read. Contact support.');
+      }
+      applicantDetails = result.data;
+    }
+    return { ...this.readAddress(application.encryptedHomeAddress), applicantDetails };
   }
 
   async reviewChefApplication(
@@ -305,6 +339,11 @@ export class SafetyService {
     if (!application)
       throw new NotFoundException('Chef application not found.');
 
+    if (dto.expectedStatus && dto.expectedStatus !== application.status) {
+      throw new ConflictException(
+        'This application has changed. Refresh the application queue before reviewing it.',
+      );
+    }
     const nextStatuses: Partial<
       Record<ChefApplicationStatus, ChefApplicationStatus[]>
     > = {
@@ -354,79 +393,91 @@ export class SafetyService {
     }
 
     const now = new Date();
-    return this.prisma.$transaction(async (transaction) => {
-      const updated = await transaction.chefApplication.update({
-        where: { id },
-        data: {
-          status: dto.status,
-          ...(dto.visitScheduledAt
-            ? { visitScheduledAt: new Date(dto.visitScheduledAt) }
-            : {}),
-          ...(dto.status === ChefApplicationStatus.interviewed &&
-          application.status !== ChefApplicationStatus.interviewed
-            ? { interviewedAt: now }
-            : {}),
-          ...(dto.status === ChefApplicationStatus.profile_setup
-            ? {
-                profileSetupAt:
-                  application.status === ChefApplicationStatus.profile_setup
-                    ? undefined
-                    : now,
-              }
-            : {}),
-          ...(dto.adminNotes !== undefined
-            ? { adminNotes: dto.adminNotes }
-            : {}),
-        },
-        select: {
-          id: true,
-          status: true,
-          submittedAt: true,
-          visitScheduledAt: true,
-          interviewedAt: true,
-          profileSetupAt: true,
-          adminNotes: true,
-        },
+    try {
+      return await this.prisma.$transaction(async (transaction) => {
+        const updated = await transaction.chefApplication.update({
+          where: { id, status: application.status },
+          data: {
+            status: dto.status,
+            ...(dto.visitScheduledAt
+              ? { visitScheduledAt: new Date(dto.visitScheduledAt) }
+              : {}),
+            ...(dto.status === ChefApplicationStatus.interviewed &&
+            application.status !== ChefApplicationStatus.interviewed
+              ? { interviewedAt: now }
+              : {}),
+            ...(dto.status === ChefApplicationStatus.profile_setup
+              ? {
+                  profileSetupAt:
+                    application.status === ChefApplicationStatus.profile_setup
+                      ? undefined
+                      : now,
+                }
+              : {}),
+            ...(dto.adminNotes !== undefined
+              ? { adminNotes: dto.adminNotes }
+              : {}),
+          },
+          select: {
+            id: true,
+            status: true,
+            submittedAt: true,
+            visitScheduledAt: true,
+            interviewedAt: true,
+            profileSetupAt: true,
+            adminNotes: true,
+          },
+        });
+        if (dto.status === ChefApplicationStatus.profile_setup) {
+          await transaction.chefProfile.update({
+            where: { id: application.chef.id },
+            data: { isPublic: true },
+          });
+        } else if (dto.status === ChefApplicationStatus.rejected) {
+          await transaction.chefProfile.update({
+            where: { id: application.chef.id },
+            data: { isPublic: false },
+          });
+        }
+        await transaction.adminAuditLog.create({
+          data: {
+            actorId: adminId,
+            action: 'chef_application_status_changed',
+            targetType: 'chef_application',
+            targetId: id,
+            details: {
+              previousStatus: application.status,
+              status: dto.status,
+              reviewerNotes: dto.adminNotes ?? null,
+            },
+          },
+        });
+        await transaction.verificationAuditLog.create({
+          data: {
+            actorId: adminId,
+            subjectId: application.chef.userId,
+            action: `chef_application_${dto.status}`,
+            targetType: 'chef_application',
+            targetId: id,
+            details: {
+              previousStatus: application.status,
+              status: dto.status,
+            },
+          },
+        });
+        return updated;
       });
-      if (dto.status === ChefApplicationStatus.profile_setup) {
-        await transaction.chefProfile.update({
-          where: { id: application.chef.id },
-          data: { isPublic: true },
-        });
-      } else if (dto.status === ChefApplicationStatus.rejected) {
-        await transaction.chefProfile.update({
-          where: { id: application.chef.id },
-          data: { isPublic: false },
-        });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
+        throw new ConflictException(
+          'This application has changed. Refresh the application queue before reviewing it.',
+        );
       }
-      await transaction.adminAuditLog.create({
-        data: {
-          actorId: adminId,
-          action: 'chef_application_status_changed',
-          targetType: 'chef_application',
-          targetId: id,
-          details: {
-            previousStatus: application.status,
-            status: dto.status,
-            reviewerNotes: dto.adminNotes ?? null,
-          },
-        },
-      });
-      await transaction.verificationAuditLog.create({
-        data: {
-          actorId: adminId,
-          subjectId: application.chef.userId,
-          action: `chef_application_${dto.status}`,
-          targetType: 'chef_application',
-          targetId: id,
-          details: {
-            previousStatus: application.status,
-            status: dto.status,
-          },
-        },
-      });
-      return updated;
-    });
+      throw error;
+    }
   }
 
   async getBookingServiceAddress(

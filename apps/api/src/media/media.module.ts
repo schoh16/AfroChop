@@ -9,5 +9,6 @@ import { VideoUploadGuard } from './video-upload.guard.js';
   imports: [AuthModule],
   controllers: [MediaController],
   providers: [MediaService, VideoService, VideoUploadGuard],
+  exports: [MediaService],
 })
 export class MediaModule {}

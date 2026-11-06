@@ -199,8 +199,99 @@ model User {
   verificationReviews    VerificationAuditLog[]   @relation("VerificationAuditSubject")
   reportedIncidents      SafetyIncident[]         @relation("ReportedUserIncidents")
   serviceAddresses       CustomerServiceAddress[]
+  groceryOrders          GroceryOrder[]
 
   @@map("users")
+}
+
+enum GroceryOrderStatus {
+  quoted
+  awaiting_payment
+  paid
+  fulfilled
+  expired
+}
+
+enum GroceryFulfillment {
+  shipping
+  pickup
+}
+
+model GroceryStore {
+  id                 String   @id @default("afrochop")
+  ownerId            String   @db.Uuid
+  originEncrypted    String
+  pickupInstructions String
+  enabled            Boolean  @default(false)
+  updatedAt          DateTime @updatedAt
+
+  @@map("grocery_store")
+}
+
+model GroceryProduct {
+  id             String             @id @default(uuid()) @db.Uuid
+  name           String
+  description    String
+  ingredients    String
+  allergenNotice String
+  imageUrl       String?
+  priceCents     Int
+  stock          Int
+  weightOz       Float
+  lengthIn       Float
+  widthIn        Float
+  heightIn       Float
+  taxCode        String
+  active         Boolean            @default(false)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  items          GroceryOrderItem[]
+
+  @@map("grocery_products")
+}
+
+model GroceryOrder {
+  id                   String             @id @default(uuid()) @db.Uuid
+  customerId           String             @db.Uuid
+  customer             User               @relation(fields: [customerId], references: [id])
+  status               GroceryOrderStatus @default(quoted)
+  fulfillment          GroceryFulfillment
+  destinationEncrypted String?
+  rates                Json
+  originVersion        DateTime
+  subtotalCents        Int
+  shippingCents        Int?
+  shippingRateId       String?
+  shippingService      String?
+  taxCents             Int?
+  totalCents           Int?
+  quoteExpiresAt       DateTime
+  checkoutExpiresAt    DateTime?
+  stripeSessionId      String?            @unique
+  checkoutUrl          String?
+  lastError            String?
+  trackingNumber       String?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  items                GroceryOrderItem[]
+
+  @@index([status, checkoutExpiresAt])
+  @@map("grocery_orders")
+}
+
+model GroceryOrderItem {
+  id         String         @id @default(uuid()) @db.Uuid
+  orderId    String         @db.Uuid
+  order      GroceryOrder   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId  String         @db.Uuid
+  product    GroceryProduct @relation(fields: [productId], references: [id])
+  name       String
+  priceCents Int
+  quantity   Int
+  taxCode    String
+
+  @@unique([orderId, productId])
+  @@map("grocery_order_items")
 }
 
 model ChefEmailCode {
@@ -325,6 +416,7 @@ model ChefApplication {
   id                   String                @id @default(uuid()) @db.Uuid
   chefId               String                @unique @db.Uuid
   encryptedHomeAddress String
+  encryptedApplicantDetails String?
   status               ChefApplicationStatus @default(submitted)
   submittedAt          DateTime              @default(now())
   visitScheduledAt     DateTime?

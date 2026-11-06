@@ -21,6 +21,7 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto) {
+    if (dto.role === UserRole.farmer) throw new ForbiddenException('Grocery selling is no longer available. Choose customer or cook.');
     const email = dto.email.trim().toLowerCase();
     const existingUser = await this.prisma.user.findUnique({
       where: { email },
@@ -94,6 +95,7 @@ export class AuthService {
   }
 
   async selectRole(userId: string, role: RegisterRole) {
+    if (role === UserRole.farmer) throw new ForbiddenException('Independent grocery selling is no longer available. Choose customer or cook.');
     try {
       const user = await this.prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId}::uuid FOR UPDATE`;
@@ -142,10 +144,6 @@ export class AuthService {
             where: { userId },
             create: { userId, displayName: account.name, languages: [], isPublic: false },
             update: {},
-          });
-        } else if (role === UserRole.farmer) {
-          await tx.farmerProfile.upsert({
-            where: { userId }, create: { userId, farmName: account.name, isPublic: false }, update: {},
           });
         }
         return tx.user.update({ where: { id: userId }, data: { role, roleSelectedAt: new Date() } });
