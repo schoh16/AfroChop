@@ -38,6 +38,20 @@ describe('persistent Cognito sessions', () => {
   });
   afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
+  it('accepts administrator sessions without offering a public admin role selection', async () => {
+    const { isAccountSession } = await setup();
+    expect(isAccountSession({ ...session, role: 'admin' })).toBe(true);
+    expect(isAccountSession({ ...session, role: 'admin', requiresRoleSelection: true })).toBe(false);
+    expect(isAccountSession({ ...session, role: 'superadmin' })).toBe(false);
+  });
+
+  it('restores an administrator browser session from the secure refresh cookie', async () => {
+    mocks.platform.OS = 'web';
+    const { authTokenStorage } = await import('./session');
+    fetchMock.mockResolvedValue(json({ ...session, role: 'admin' }));
+    expect(JSON.parse((await authTokenStorage.get(base))!).role).toBe('admin');
+  });
+
   it('restores a browser session by refreshing its HttpOnly cookie without reading browser token storage', async () => {
     mocks.platform.OS = 'web';
     const { authTokenStorage } = await import('./session');

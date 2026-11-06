@@ -63,9 +63,6 @@ export function SharedAccountFlow({ apiBaseUrl, session, initialError, onSession
       return;
     }
     const result = await authRequest<AccountSession>(apiBaseUrl, 'login', { ...body, password });
-    if (!['customer', 'chef', 'farmer'].includes(result.role)) {
-      throw new Error('This account uses administrator access, not a marketplace workspace.');
-    }
     await onSession(result);
     setPassword(''); setConfirm('');
   }
@@ -81,9 +78,8 @@ export function SharedAccountFlow({ apiBaseUrl, session, initialError, onSession
       <Text style={s.text}>Welcome, {session.name}. Choose one role for this account. This choice is saved once, not requested at every login.</Text>
       <Text style={s.text}>Existing users must confirm a role too. Changing roles preserves your records but hides your old seller profile. Active work or unresolved payments must be finished first; confirm your current role to access them.</Text>
       {([
-        { role: 'customer', title: 'Customer', icon: 'C', description: 'Find food, discover cooks and farms, and request bookings.' },
+        { role: 'customer', title: 'Customer', icon: 'C', description: 'Find African food, discover cooks, and request bookings.' },
         { role: 'chef', title: 'Chef / Cook', icon: 'C', description: 'Build your cooking profile, share food media, and manage requests.' },
-        { role: 'farmer', title: 'Farmer', icon: 'F', description: 'Showcase produce, share farm media, and respond to customers.' },
       ] as const).map((choice) => <RoleSelectionCard key={choice.role} {...choice}
         selected={selected === choice.role} onPress={() => { if (!busy) setSelected(choice.role); }} />)}
       <PrimaryButton label="Confirm Role and Continue" loading={busy} disabled={!selected} onPress={() => void perform(async () => {
@@ -96,10 +92,10 @@ export function SharedAccountFlow({ apiBaseUrl, session, initialError, onSession
       <PrimaryButton label="Sign Out" secondary disabled={busy} onPress={() => void perform(onSignOut)} />
     </> : <>
       <Text style={s.title}>{({
-        signin: 'Sign in to AfroChop', signup: 'Create / migrate your account',
+        signin: 'Sign in to AfroChop', signup: 'Create Account',
         confirm: 'Verify your email', forgot: 'Forgot your password?', reset: 'Choose a new password',
       })[mode]}</Text>
-      <Text style={s.text}>One account for customers, chefs, and farmers. Your password is managed by Amazon Cognito, never saved on this device.</Text>
+      <Text style={s.text}>One account for customers and African cooks. Your password is managed by Amazon Cognito, never saved on this device.</Text>
       {signup ? <Text style={s.text}>Already have an AfroChop account from before this upgrade? Use the same email, choose a new password, and verify your email to keep your profile and bookings. Administrator accounts must contact support.</Text> : null}
       {signup ? <AuthInput label="Full name" autoComplete="name" value={name} onChangeText={setName} maxLength={120} /> : null}
       <AuthInput label="Email address" autoComplete="email" autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} editable={!busy} />
@@ -118,12 +114,12 @@ export function SharedAccountFlow({ apiBaseUrl, session, initialError, onSession
         </Pressable>
       </> : null}
       <PrimaryButton label={({
-        signin: 'Sign In', signup: 'Create / Migrate Account', confirm: 'Verify Email',
+        signin: 'Sign In', signup: 'Create Account', confirm: 'Verify Email',
         forgot: 'Send Reset Code', reset: 'Reset Password',
       })[mode]} loading={busy} onPress={() => void perform(authenticate)} />
       {mode === 'signin' ? <>
         <PrimaryButton secondary disabled={busy} label="Forgot Password?" onPress={() => changeMode('forgot')} />
-        <PrimaryButton secondary disabled={busy} label="Create / Migrate Account" onPress={() => changeMode('signup')} />
+        <PrimaryButton secondary disabled={busy} label="Create Account" onPress={() => changeMode('signup')} />
         <PrimaryButton secondary disabled={busy} label="Verify Email / Resend Confirmation Code" onPress={() => changeMode('confirm')} />
       </> : <PrimaryButton secondary disabled={busy} label="Back to Sign In" onPress={() => changeMode('signin')} />}
       {mode === 'confirm' ? <PrimaryButton secondary disabled={busy} label="Resend Confirmation Code"

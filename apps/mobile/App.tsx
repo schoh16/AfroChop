@@ -1,7 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Linking from 'expo-linking';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect,useState } from 'react';
+import { Redirect } from 'expo-router';
+import { AdminDashboard } from './components/AdminDashboard';
+import { useCallback,useEffect,useEffectEvent,useRef,useState } from 'react';
 import {
 ActivityIndicator,
 Image,
@@ -23,10 +25,9 @@ PrimaryButton
 import { CalendarPicker,parseDateKey } from './components/CalendarPicker';
 import { ChefWorkspace } from './components/ChefWorkspace';
 import { CustomerRequests } from './components/CustomerRequests';
-import { FarmerWorkspace } from './components/FarmerWorkspace';
-import { FarmersMarketplace } from './components/FarmersMarketplace';
 import { SellerGallery } from './components/SellerPhotos';
 import { LocationDropdowns } from './components/LocationDropdowns';
+import { SelectionDropdown } from './components/SelectionDropdown';
 import { Messaging,type MessagePartner } from './components/Messaging';
 import {
 RatingSummary,
@@ -39,6 +40,7 @@ import { authTokenStorage } from './lib/authTokenStorage';
 import { authenticatedFetch as fetch, isAccountSession } from './lib/session';
 import { avatarUrl } from './lib/avatar';
 import { marketingContactRequiresOptIn } from './lib/marketingRegions';
+import { customerPreferencesKey, parseCustomerPreferences } from './lib/customerPreferences';
 
 const featuredCountryCodes = ['NG', 'GH', 'CM', 'MA', 'ET', 'SN', 'KE', 'ZA'];
 const apiBaseUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000/api';
@@ -152,7 +154,8 @@ async function openChefSocialProfile(platform: string, link: string) {
   await Linking.openURL(url.toString());
 }
 
-export default function App() {
+export default function App({ adminRoute = false }: { adminRoute?: boolean }) {
+  const [adminSession, setAdminSession] = useState<AccountSession | null>(null);
   const [countries, setCountries] = useState<Country[]>([]);
   const [marketCountries, setMarketCountries] = useState<MarketCountry[]>([]);
   const [chefs, setChefs] = useState<ChefSummary[]>([]);
@@ -181,7 +184,6 @@ export default function App() {
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
   const [chefSessionToken, setChefSessionToken] = useState<string | null>(null);
   const [farmerSessionToken, setFarmerSessionToken] = useState<string | null>(null);
-  const [showFarmers, setShowFarmers] = useState(false);
   const [showCustomerMenu, setShowCustomerMenu] = useState(false);
   const [showMessages, setShowMessages] = useState(false);
   const [showRequests, setShowRequests] = useState(false);
@@ -189,6 +191,7 @@ export default function App() {
   const [customerAuthMessage, setCustomerAuthMessage] = useState<string | null>(null);
   const [customerSessionToken, setCustomerSessionToken] = useState<string | null>(null);
   const [customerDisplayName, setCustomerDisplayName] = useState<string | null>(null);
+  const [customerId, setCustomerId] = useState<string | null>(null);
   const [customerMarketingSharing, setCustomerMarketingSharing] = useState(false);
   const [customerMarketingSharingTouched, setCustomerMarketingSharingTouched] = useState(false);
   const [isNewCustomer, setIsNewCustomer] = useState(false);
@@ -196,7 +199,10 @@ export default function App() {
   const [isRestoringSession, setIsRestoringSession] = useState(true);
   const [pendingAccount, setPendingAccount] = useState<AccountSession | null>(null);
   const [favoriteCountries, setFavoriteCountries] = useState<string[]>([]);
-  const [favoriteDishes, setFavoriteDishes] = useState<string[]>([]);
+  const [foodNames, setFoodNames] = useState<string[]>([]);
+  const [selectedFood, setSelectedFood] = useState('');
+  const [foodsLoading, setFoodsLoading] = useState(true);
+  const [foodsError, setFoodsError] = useState<string | null>(null);
   const [onboardingCity, setOnboardingCity] = useState('');
   const [onboardingState, setOnboardingState] = useState('');
   const [onboardingCountryCode, setOnboardingCountryCode] = useState('');
@@ -206,6 +212,53 @@ export default function App() {
   const [guideRole, setGuideRole] = useState<'customer' | 'chef' | null>(null);
   const [guideStep, setGuideStep] = useState(0);
   const [guideError, setGuideError] = useState<string | null>(null);
+  const foodGeneration = useRef(0);
+
+  const refreshFoods = useCallback(() => {
+    const generation = ++foodGeneration.current;
+    return fetch(`${apiBaseUrl}/catalog/available-foods`).then(async (response) => {
+      if (!response.ok) throw new Error(`Food list failed (${response.status}).`);
+      const names: unknown = await response.json();
+      if (!Array.isArray(names) || !names.every((name: unknown) => typeof name === 'string')) {
+        throw new Error('The server returned an invalid food list.');
+      }
+      if (generation === foodGeneration.current) {
+        setFoodNames(names);
+        setSelectedFood((current) => names.includes(current) ? current : '');
+      }
+    }).catch((error: unknown) => {
+      if (generation === foodGeneration.current) setFoodsError(error instanceof Error ? error.message : 'Could not load available foods.');
+    }).finally(() => {
+      if (generation === foodGeneration.current) setFoodsLoading(false);
+    });
+  }, []);
+
+  const restorePreferenceSearch = useEffectEvent((savedCity: string, savedState: string) => {
+    void loadChefs('', null, savedCity, savedState, '');
+  });
+
+  useEffect(() => {
+    let active = true;
+    if (!customerId) return;
+    void AsyncStorage.getItem(customerPreferencesKey(apiBaseUrl, customerId)).then((raw) => {
+      if (!active) return;
+      const saved = raw ? parseCustomerPreferences(raw) : { city: '', state: '', countryCode: 'US', favoriteCountries: [] };
+      setCity(saved.city);
+      setStateRegion(saved.state);
+      setHomeCountryCode(saved.countryCode || 'US');
+      setOnboardingCity(saved.city);
+      setOnboardingState(saved.state);
+      setOnboardingCountryCode(saved.countryCode);
+      setOnboardingCountryName('');
+      setFavoriteCountries(saved.favoriteCountries);
+      setSelectedCountryId(undefined);
+      setSelectedFood('');
+      restorePreferenceSearch(saved.city, saved.state);
+    }).catch((error: unknown) => {
+      if (active) setCustomerAuthMessage(error instanceof Error ? error.message : 'Could not restore customer preferences.');
+    });
+    return () => { active = false; };
+  }, [customerId]);
 
   useEffect(() => {
     let active = true;
@@ -216,12 +269,14 @@ export default function App() {
         if (!isAccountSession(session)) {
           throw new Error('Saved sign-in details are invalid. Please sign in again.');
         }
-        if (session.requiresRoleSelection) setPendingAccount(session);
+        if (session.role === 'admin') setAdminSession(session);
+        else if (session.requiresRoleSelection) setPendingAccount(session);
         else if (session.role === 'chef') setChefSessionToken(session.token);
         else if (session.role === 'farmer') setFarmerSessionToken(session.token);
         else {
           setCustomerSessionToken(session.token);
           setCustomerDisplayName(session.name);
+          setCustomerId(session.id);
         }
       })
       .catch((error: unknown) => {
@@ -246,12 +301,20 @@ export default function App() {
     setChefSessionToken(null);
     setFarmerSessionToken(null);
     setCustomerSessionToken(null);
+    setCustomerId(null);
+    setAdminSession(null);
+    if (session.role === 'admin') {
+      setAdminSession(session);
+      setGuideRole(null);
+      return;
+    }
     if (session.requiresRoleSelection) return;
     if (session.role === 'chef') setChefSessionToken(session.token);
     else if (session.role === 'farmer') setFarmerSessionToken(session.token);
     else {
       setCustomerSessionToken(session.token);
       setCustomerDisplayName(session.name);
+      setCustomerId(session.id);
     }
     if (session.role !== 'farmer') {
       setIsNewCustomer(Boolean(pendingAccount) && session.role === 'customer');
@@ -270,15 +333,16 @@ export default function App() {
   async function signOutAccount() {
     await authTokenStorage.remove();
     setPendingAccount(null);
+    setAdminSession(null);
     setChefSessionToken(null);
     setFarmerSessionToken(null);
     setCustomerSessionToken(null);
+    setCustomerId(null);
     setGuideRole(null);
     setCustomerOnboarding(false);
     setShowRequests(false);
     setShowMessages(false);
     setMessagePartner(null);
-    setShowFarmers(false);
   }
 
   async function finishGuide() {
@@ -310,8 +374,9 @@ export default function App() {
     setCity('');
     setStateRegion('');
     setSelectedCountryId(undefined);
+    setSelectedFood('');
     setCustomerOnboarding(false);
-    void loadChefs('', null, '', '');
+    void loadChefs('', null, '', '', '');
   }
 
   async function signOutCustomer() {
@@ -323,8 +388,8 @@ export default function App() {
     }
 
     setCustomerSessionToken(null);
+    setCustomerId(null);
     setCustomerDisplayName(null);
-    setShowFarmers(false);
     setShowCustomerMenu(false);
     setCustomerOnboarding(false);
     setGuideRole(null);
@@ -341,12 +406,14 @@ export default function App() {
     countryId: string | null = selectedCountryId ?? null,
     serviceCity = city,
     serviceState = stateRegion,
+    foodName = selectedFood,
   ) {
     setIsLoading(true);
     setDiscoveryError(null);
     const params = new URLSearchParams();
     if (search?.trim()) params.set('q', search.trim());
     if (countryId) params.set('countryId', countryId);
+    if (foodName) params.set('foodName', foodName);
     if (serviceCity.trim()) params.set('city', serviceCity.trim());
     if (serviceState.trim()) params.set('state', serviceState.trim());
 
@@ -452,6 +519,11 @@ export default function App() {
   }
 
   useEffect(() => {
+    void refreshFoods();
+    return () => { foodGeneration.current += 1; };
+  }, [refreshFoods]);
+
+  useEffect(() => {
     let isMounted = true;
 
     fetch(`${apiBaseUrl}/catalog/countries`)
@@ -516,17 +588,28 @@ export default function App() {
     }
   }
 
+  if (!isRestoringSession && adminSession && !adminRoute) {
+    return <Redirect href="/admin" />;
+  }
+  if (!isRestoringSession && adminRoute &&
+      (chefSessionToken || farmerSessionToken || customerSessionToken)) {
+    return <Redirect href="/" />;
+  }
+
   return (
     <SafeAreaProvider>
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
       <StatusBar style="dark" />
-      {customerAuthMessage && (chefSessionToken || farmerSessionToken || customerSessionToken)
+      {customerAuthMessage && (adminSession || chefSessionToken || farmerSessionToken || customerSessionToken)
         ? <Text accessibilityRole="alert" style={styles.stateError}>{customerAuthMessage}</Text> : null}
       {isRestoringSession ? (
         <View style={styles.authLoading}>
           <ActivityIndicator color={colors.forest} size="large" />
           <Text style={styles.signupIntro}>Checking your secure sign-in…</Text>
         </View>
+      ) : adminSession ? (
+        <AdminDashboard key={adminSession.id} apiBaseUrl={apiBaseUrl}
+          token={adminSession.token} name={adminSession.name} onSignOut={signOutAccount} />
       ) : pendingAccount || (!chefSessionToken && !farmerSessionToken && !customerSessionToken) ? (
         <SharedAccountFlow key={pendingAccount?.id ?? 'signed-out'} apiBaseUrl={apiBaseUrl} session={pendingAccount} initialError={customerAuthMessage}
           onSession={acceptAccount} onSignOut={signOutAccount} />
@@ -559,7 +642,7 @@ export default function App() {
             {(guideRole === 'customer'
               ? [
                   { title: 'Discover local cooks', body: 'Search by location, cuisine, or name. Open a profile to explore dishes, photos, reviews, and service areas.' },
-                  { title: 'Find the right menu', body: 'Review ingredients and allergen details, then contact a cook with a quote request for your occasion.' },
+                  { title: 'Talk, review, then pay', body: 'Discuss your booking with the cook in messages. Request a quote after you both reply, approve the cook’s quote, then proceed to payment.' },
                   { title: 'Share important food needs', body: 'Include allergies and dietary restrictions with your request. The cook will review them before confirming.' },
                 ]
               : [
@@ -633,7 +716,7 @@ export default function App() {
               countries={marketCountries}
               apiBaseUrl={apiBaseUrl}
               countryCode={onboardingCountryCode}
-              countryName={onboardingCountryName}
+              countryName={marketCountries.find((country) => country.code === onboardingCountryCode)?.name ?? onboardingCountryName}
               state={onboardingState}
               city={onboardingCity}
               onCountryChange={(code, name) => {
@@ -670,49 +753,15 @@ export default function App() {
                 </Text>
               </Pressable>
             ) : null}
-            <Text style={styles.formSectionTitle}>Favorite cuisines</Text>
-            <View style={styles.onboardingChoices}>
-              {sortCuisineCountries(countries).map((country) => {
-                const key = country.id ?? country.code ?? country.name;
-                const selected = favoriteCountries.includes(key);
-                return (
-                  <Pressable
-                    key={key}
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: selected }}
-                    onPress={() => setFavoriteCountries((current) =>
-                      selected ? current.filter((item) => item !== key) : [...current, key],
-                    )}
-                    style={[styles.onboardingChip, selected && styles.onboardingChipSelected]}
-                  >
-                    <Text style={[styles.onboardingChipText, selected && styles.onboardingChipTextSelected]}>
-                      {country.flag} {country.name}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-            <Text style={styles.formSectionTitle}>What are you craving?</Text>
-            <View style={styles.onboardingChoices}>
-              {['Jollof rice', 'Ndolé', 'Egusi soup', 'Fufu', 'Suya', 'Injera'].map((dish) => {
-                const selected = favoriteDishes.includes(dish);
-                return (
-                  <Pressable
-                    key={dish}
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: selected }}
-                    onPress={() => setFavoriteDishes((current) =>
-                      selected ? current.filter((item) => item !== dish) : [...current, dish],
-                    )}
-                    style={[styles.onboardingChip, selected && styles.onboardingChipSelected]}
-                  >
-                    <Text style={[styles.onboardingChipText, selected && styles.onboardingChipTextSelected]}>
-                      {dish}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+            <SelectionDropdown label="Favorite cuisines" multiple emptyLabel="Select favorite cuisines"
+              emptyMessage="No cuisine countries are available yet."
+              options={sortCuisineCountries(countries).map((country) => ({
+                key: country.id ?? country.code ?? country.name, label: `${country.flag} ${country.name}`,
+              }))}
+              selectedKeys={favoriteCountries}
+              onSelect={(key) => setFavoriteCountries((current) =>
+                current.includes(key) ? current.filter((item) => item !== key) : [...current, key],
+              )} />
             {onboardingError ? <Text accessibilityRole="alert" style={styles.signupMessage}>{onboardingError}</Text> : null}
             <PrimaryButton
               label="Explore African Food"
@@ -744,15 +793,16 @@ export default function App() {
                       contactSyncNotice = 'Your preference was saved. Contact-list syncing is not configured yet.';
                     }
                   }
-                  await AsyncStorage.setItem('afrochop.customer-preferences', JSON.stringify({
+                  if (!customerId) throw new Error('Sign in again before saving your preferences.');
+                  await AsyncStorage.setItem(customerPreferencesKey(apiBaseUrl, customerId), JSON.stringify({
                   city: onboardingCity.trim(),
                   state: onboardingState.trim(),
                   countryCode: onboardingCountryCode,
                   favoriteCountries,
-                  favoriteDishes,
                   }));
                   setCity(onboardingCity.trim());
                   setStateRegion(onboardingState.trim());
+                  setHomeCountryCode(onboardingCountryCode || 'US');
                   if (onboardingCountryCode) {
                     const selectedCountry = countries.find(({ code }) => code === onboardingCountryCode);
                     if (selectedCountry?.id) setSelectedCountryId(selectedCountry.id);
@@ -787,13 +837,13 @@ export default function App() {
           </View>
         </AuthScreenLayout>
       ) : farmerSessionToken ? (
-        <FarmerWorkspace
-          token={farmerSessionToken}
-          apiBaseUrl={apiBaseUrl}
-          onSignOut={() => { void signOutAccount().catch((error: unknown) => {
+        <View style={styles.content}>
+          <Text style={styles.title}>AfroChop groceries</Text>
+          <Text style={styles.signupIntro}>AfroChop now connects customers with African cooks. Grocery selling is no longer available. Contact support to update your account; your historical records are retained.</Text>
+          <PrimaryButton label="Sign Out" onPress={() => { void signOutAccount().catch((error: unknown) => {
             setCustomerAuthMessage(error instanceof Error ? error.message : 'Could not sign out.');
-          }); }}
-        />
+          }); }} />
+        </View>
       ) : customerSessionToken && showRequests ? (
         <CustomerRequests
           token={customerSessionToken}
@@ -810,18 +860,27 @@ export default function App() {
           token={customerSessionToken}
           apiBaseUrl={apiBaseUrl}
           initialPartner={messagePartner}
+          onRequestQuote={
+            selectedChef?.userId && selectedChef.userId === messagePartner?.id
+              && selectedChef.serviceTypes.some((type) => type !== 'grocery_shopping')
+              ? () => {
+                setShowMessages(false);
+                setMessagePartner(null);
+                setBookingOpen(true);
+                setBookingNotice(null);
+                setAllergyAcknowledged(false);
+                setQuoteServiceType(selectedChef.serviceTypes.find((type) => type !== 'grocery_shopping') ?? '');
+                const chefRegion = selectedChef.state?.trim() ?? '';
+                setQuoteJurisdiction(/^[A-Za-z0-9]{2,3}$/.test(chefRegion) ? chefRegion.toUpperCase() : '');
+                setQuoteDate('');
+                setQuoteStartTime('');
+              }
+              : undefined
+          }
           onBack={() => {
             setShowMessages(false);
             setMessagePartner(null);
           }}
-        />
-      ) : customerSessionToken && showFarmers ? (
-        <FarmersMarketplace
-          token={customerSessionToken}
-          apiBaseUrl={apiBaseUrl}
-          countries={marketCountries}
-          onBack={() => setShowFarmers(false)}
-          onSignOut={() => void signOutCustomer()}
         />
       ) : chefSessionToken ? (
         <ChefWorkspace
@@ -849,8 +908,8 @@ export default function App() {
                 <Text style={styles.eyebrow}>AfroChop</Text>
                 <Text style={styles.homeLinkText}>⌂ Home</Text>
               </Pressable>
-              <Text style={styles.title}>A taste of home, nearby.</Text>
-              <Text style={styles.tagline}>Find African cooks in your area.</Text>
+              <Text style={styles.title}>African food, your way.</Text>
+              <Text style={styles.tagline}>Discover African chefs, explore their food, and request a cooking service.</Text>
             </View>
             <Pressable
               accessibilityRole="button"
@@ -902,17 +961,6 @@ export default function App() {
               </Pressable>
               <Pressable
                 accessibilityRole="button"
-                onPress={() => {
-                  setShowCustomerMenu(false);
-                  setShowFarmers(true);
-                }}
-                style={styles.customerMenuItem}
-              >
-                <Text style={styles.customerMenuItemTitle}>🌽 Local farmers</Text>
-                <Text style={styles.customerMenuItemDetail}>Browse nearby produce and requests</Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
                 accessibilityLabel="Sign out of your customer account"
                 onPress={() => void signOutCustomer()}
                 style={[styles.customerMenuItem, styles.customerMenuSignOut]}
@@ -922,6 +970,7 @@ export default function App() {
             </View>
           ) : null}
         </View>
+
 
         <View style={styles.locationBlock}>
           <Text style={styles.locationLabel}>FIND COOKS NEAR</Text>
@@ -972,46 +1021,35 @@ export default function App() {
 
         <FeaturedFoodRail
           onSelectDish={(dish) => {
+            setSelectedFood('');
             setSearchText(dish);
-            void loadChefs(dish);
+            void loadChefs(dish, selectedCountryId ?? null, city, stateRegion, '');
           }}
         />
 
-        <Text style={styles.locationLabel}>WHAT COUNTRY’S CUISINE?</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ selected: !selectedCountryId }}
-            style={[styles.filterPill, !selectedCountryId && styles.filterPillSelected]}
-            onPress={() => {
-              setSelectedCountryId(undefined);
-            void loadChefs(searchText, null);
-            }}
-          >
-            <Text style={[styles.filterText, !selectedCountryId && styles.filterTextSelected]}>All cuisines</Text>
-          </Pressable>
-          {sortCuisineCountries(countries).map((country) => (
-            <Pressable
-              key={country.id ?? country.name}
-              accessibilityRole="button"
-              accessibilityState={{ selected: country.id === selectedCountryId }}
-              style={[
-                styles.filterPill,
-                country.id === selectedCountryId && styles.filterPillSelected,
-              ]}
-              onPress={() => {
-                const nextId = country.id === selectedCountryId ? null : country.id;
-                setSelectedCountryId(nextId ?? undefined);
-                void loadChefs(searchText, nextId);
-              }}
-            >
-              <Text style={[
-                styles.filterText,
-                country.id === selectedCountryId && styles.filterTextSelected,
-              ]}>{country.flag} {country.name}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
+        <SelectionDropdown label="Country cuisine" emptyLabel="All cuisines"
+          emptyMessage="No cuisine countries are available yet."
+          options={sortCuisineCountries(countries).flatMap((country) => country.id
+            ? [{ key: country.id, label: `${country.flag} ${country.name}` }] : [])}
+          selectedKeys={selectedCountryId ? [selectedCountryId] : []}
+          onSelect={(key) => {
+            setSelectedCountryId(key || undefined);
+            void loadChefs(searchText, key || null);
+          }} />
+        <SelectionDropdown label="Food" emptyLabel={foodsLoading ? 'Loading foods...' : 'All foods'}
+          emptyMessage="No foods from published cooks are available yet." disabled={foodsLoading || Boolean(foodsError)}
+          options={foodNames.map((name) => ({ key: name, label: name }))}
+          selectedKeys={selectedFood ? [selectedFood] : []}
+          onSelect={(name) => {
+            setSelectedFood(name);
+            void loadChefs(searchText, selectedCountryId ?? null, city, stateRegion, name);
+          }} />
+        {foodsError ? <Text accessibilityRole="alert" style={styles.stateError}>{foodsError}</Text> : null}
+        <PrimaryButton label="Refresh available foods" secondary disabled={foodsLoading} onPress={() => {
+          setFoodsLoading(true);
+          setFoodsError(null);
+          void refreshFoods();
+        }} />
 
         <View style={styles.sectionTitleRow}>
           <Text style={styles.sectionTitle}>{city.trim() ? `Cooks near ${city.trim()}` : 'Find a local cook'}</Text>
@@ -1195,42 +1233,27 @@ export default function App() {
                 Reviews are tied to completed bookings. Report or appeal requests are reviewed without removing genuine criticism solely because it is negative.
               </Text>
             </View>
-            {selectedChef.userId ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Message ${selectedChef.displayName}`}
-                style={[styles.primaryButton, { marginBottom: 8 }]}
-                onPress={() => {
-                  if (!customerSessionToken) {
-                    setBookingOpen(true);
-                    setCustomerAuthMessage(null);
-                    return;
-                  }
-                  setMessagePartner({ id: selectedChef.userId as string, name: selectedChef.displayName });
-                  setShowMessages(true);
-                }}
-              >
-                <Text style={styles.primaryButtonText}>💬 Message cook</Text>
-              </Pressable>
-            ) : null}
+            <Text style={styles.cardText}>
+              Message the cook first, receive their quote, approve it, then pay. Sending a request does not charge you or confirm a booking.
+            </Text>
             <Pressable
               style={styles.primaryButton}
+              disabled={!selectedChef.userId}
               onPress={() => {
-                setBookingOpen(true);
-                setBookingNotice(null);
-                setAllergyAcknowledged(false);
-                setQuoteServiceType(selectedChef.serviceTypes[0] ?? 'prepared_meals');
-                const chefRegion = selectedChef.state?.trim() ?? '';
-                setQuoteJurisdiction(
-                  /^[A-Za-z0-9]{2,3}$/.test(chefRegion)
-                    ? chefRegion.toUpperCase()
-                    : '',
-                );
-                setQuoteDate('');
-                setQuoteStartTime('');
+                if (!customerSessionToken) {
+                  setBookingOpen(true);
+                  setCustomerAuthMessage(null);
+                  return;
+                }
+                if (!selectedChef.userId) return;
+                setBookingOpen(false);
+                setMessagePartner({ id: selectedChef.userId, name: selectedChef.displayName });
+                setShowMessages(true);
               }}
             >
-              <Text style={styles.primaryButtonText}>Discuss an order & get a quote</Text>
+              <Text style={styles.primaryButtonText}>
+                Message cook to discuss a booking
+              </Text>
             </Pressable>
             {bookingOpen ? (
               <View style={styles.bookingPanel}>
@@ -1252,7 +1275,10 @@ export default function App() {
                   </>
                 ) : (
                   <>
-                    <Text style={styles.cardTitle}>Request a quote</Text>
+                    <Text style={styles.cardTitle}>Send your discussed booking details</Text>
+                    <Text style={styles.cardText}>
+                      Both you and the cook must reply in your conversation first. The cook will send a quote for your approval. Payment is available only after you approve it.
+                    </Text>
                     <AccountVerification
                       token={customerSessionToken}
                       apiBaseUrl={apiBaseUrl}
@@ -1265,7 +1291,7 @@ export default function App() {
                     </Text>
                     <Text style={styles.countryPickerLabel}>Service type</Text>
                     <View style={styles.allergenChoices}>
-                      {selectedChef.serviceTypes.map((serviceType) => {
+                      {selectedChef.serviceTypes.filter((type) => type !== 'grocery_shopping').map((serviceType) => {
                         const selected = quoteServiceType === serviceType;
                         return (
                           <Pressable
@@ -1562,23 +1588,6 @@ const styles = StyleSheet.create({
   consentText: { color: colors.brown, flex: 1, fontSize: 12, lineHeight: 18 },
   preferenceAction: { alignSelf: 'flex-start', minHeight: 40, justifyContent: 'center', paddingHorizontal: 4 },
   bioInput: { minHeight: 84, textAlignVertical: 'top', paddingTop: 13 },
-  onboardingChoices: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 18,
-  },
-  onboardingChip: {
-    backgroundColor: '#fff',
-    borderColor: '#D9CCBD',
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-  },
-  onboardingChipSelected: { backgroundColor: colors.forest, borderColor: colors.forest },
-  onboardingChipText: { color: colors.brown, fontSize: 12, fontWeight: '600' },
-  onboardingChipTextSelected: { color: '#fff' },
   guideScreen: {
     backgroundColor: '#fff',
     borderRadius: 26,
@@ -1908,32 +1917,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     marginBottom: 20,
-  },
-  filterScroll: {
-    marginBottom: 16,
-    flexGrow: 0,
-  },
-  filterPill: {
-    backgroundColor: '#fff',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 999,
-    marginRight: 8,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#E8DED0',
-  },
-  filterText: {
-    color: '#4F3221',
-    fontWeight: '700',
-    fontSize: 12,
-  },
-  filterPillSelected: {
-    backgroundColor: colors.forest,
-    borderColor: colors.forest,
-  },
-  filterTextSelected: {
-    color: '#fff',
   },
   heroCard: {
     backgroundColor: colors.forest,

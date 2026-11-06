@@ -70,6 +70,25 @@ export async function uploadSellerPhoto<T>(
   return result;
 }
 
+export async function uploadGroceryProductPhoto(
+  apiBaseUrl: string, _token: string, uri: string,
+): Promise<{ imageUrl: string }> {
+  const form = new FormData();
+  const file = Platform.OS === 'web'
+    ? await (await fetch(uri)).blob()
+    : new File(uri);
+  if (!file.size || file.size > 2 * 1024 * 1024) {
+    throw new Error('Choose a smaller photo (maximum 2 MB).');
+  }
+  form.append('file', file, 'product.jpg');
+  const response = await expoFetch(`${apiBaseUrl}/grocery/admin/products/image`, {
+    method: 'POST', headers: { Authorization: `****** getAccessToken()}` }, body: form,
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(Array.isArray(result.message) ? result.message.join(' ') : result.message ?? `Photo upload failed (${response.status}).`);
+  return result;
+}
+
 export function uploadProfilePhoto(apiBaseUrl: string, token: string, uri: string) {
   return uploadSellerPhoto<{ profileImageUrl: string }>(apiBaseUrl, token, uri, true);
 }

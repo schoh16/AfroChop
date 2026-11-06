@@ -432,6 +432,25 @@ before shipping this dashboard; do not OTA-update the old native runtime.
 For browser session persistence, retain the HTTPS same-site web/API setup described
 above. This dashboard contains private information and should not be publicly cached.
 
+## Booking flow: discussion, quote, approval, payment
+
+1. The customer opens the cook's profile and starts an in-app conversation.
+2. Both the customer and cook must send at least one message to each other.
+   The conversation response exposes `discussionComplete`, based on the full
+   conversation history rather than only the current page of messages.
+3. The customer continues from that conversation to submit the discussed booking
+   details and allergy acknowledgment. This is a quote request, not a payment.
+4. The assigned cook reviews the request, resolves any allergy review, and sends
+   a quote. New or revised quotes on historical requests also require a two-way conversation.
+5. The customer approves the quote, reserving the existing 24-hour payment hold,
+   then separately proceeds to Stripe payment. Approval alone never charges them.
+
+The API rejects new quote requests and cook quotes without the two-way message
+exchange, including when demo compliance bypass is enabled. Existing accepted
+quotes and historical booking/payment management remain supported. Checkout
+requires an accepted quote and an awaiting-payment booking; pending, declined,
+or expired quotes cannot start checkout.
+
 ## Retired grocery infrastructure (historical reference only)
 
 The customer store and administrator store screens have been removed. Old

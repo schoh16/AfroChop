@@ -18,6 +18,7 @@ type Quote = {
 
 type CustomerRequest = {
   id: string;
+  chef: { userId: string; displayName: string } | null;
   status: string;
   serviceType: string;
   requestedDate: string | null;
@@ -207,6 +208,7 @@ export function CustomerRequests({ token, apiBaseUrl, onBack, onMessage }: Props
         </Pressable>
       </View>
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      <Text style={styles.detail}>Message your cook, receive their quote, approve it, then proceed to payment. Quote approval does not charge you.</Text>
       {loading ? (
         <ActivityIndicator style={styles.loader} color="#c2410c" />
       ) : (
@@ -214,7 +216,7 @@ export function CustomerRequests({ token, apiBaseUrl, onBack, onMessage }: Props
           <AccountVerification token={token} apiBaseUrl={apiBaseUrl} />
           {requests.length === 0 ? (
             <Text style={styles.empty}>
-              You haven’t requested a quote yet. Open a cook’s profile and tap “Discuss an order &amp; get a quote”.
+              You haven’t requested a quote yet. Open a cook’s profile and tap “Message cook to discuss a booking”. After both of you reply, continue to the quote request.
             </Text>
           ) : (
             requests.map((request) => {
@@ -238,6 +240,17 @@ export function CustomerRequests({ token, apiBaseUrl, onBack, onMessage }: Props
                     <Text style={styles.detail}>Cook’s allergy response: {request.allergyResponseNote}</Text>
                   ) : null}
                   {request.notes ? <Text style={styles.detail}>Your request: {request.notes}</Text> : null}
+                  {request.chef ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => {
+                        if (request.chef) onMessage({ id: request.chef.userId, name: request.chef.displayName });
+                      }}
+                      style={styles.message}
+                    >
+                      <Text style={styles.messageText}>Message {request.chef.displayName}</Text>
+                    </Pressable>
+                  ) : null}
                   {request.quotes.map((quote) => {
                     const amount = Number(quote.amount);
                     const currencyCode = currencyForCountry(quote.chef.countryCode);
@@ -265,7 +278,7 @@ export function CustomerRequests({ token, apiBaseUrl, onBack, onMessage }: Props
                               onPress={() => void respond(quote.id, 'accept')}
                               style={[styles.accept, busyId === quote.id && styles.disabled]}
                             >
-                              <Text style={styles.acceptText}>Accept quote</Text>
+                              <Text style={styles.acceptText}>Approve quote (no charge yet)</Text>
                             </Pressable>
                             <Pressable
                               accessibilityRole="button"

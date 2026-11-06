@@ -17,6 +17,7 @@ import {
   VerificationStatus,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { hasBookingDiscussion } from '../messages/booking-discussion.js';
 import { BookingRequestDto } from './dto/booking-request.dto.js';
 import {
   ChefQuoteDto,
@@ -49,6 +50,7 @@ export class QuotesService {
       where: { customerId },
       orderBy: { createdAt: 'desc' },
       include: {
+        chef: { select: { userId: true, displayName: true } },
         quotes: {
           orderBy: { createdAt: 'desc' },
           include: {
@@ -155,6 +157,8 @@ export class QuotesService {
       throw new NotFoundException('Approved chef offering this service was not found.');
     }
 
+    await this.requireBookingDiscussion(customerId, chef.userId);
+
     const now = new Date();
     const serviceAddressId = devComplianceBypassEnabled()
       ? undefined
@@ -244,6 +248,7 @@ export class QuotesService {
     const request = await this.prisma.bookingRequest.findUnique({
       where: { id: bookingRequestId },
       select: {
+        customerId: true,
         chefId: true,
         status: true,
         allergyReviewStatus: true,
@@ -269,6 +274,7 @@ export class QuotesService {
     if (request.status !== BookingStatus.requested && request.status !== BookingStatus.quoted) {
       throw new BadRequestException('This request is no longer accepting quotes.');
     }
+    await this.requireBookingDiscussion(request.customerId, chefUserId);
     if (!devComplianceBypassEnabled()) {
       if (!request.serviceJurisdictionCode) {
         throw new ForbiddenException('The booking has no jurisdiction configured for verification.');
@@ -314,11 +320,24 @@ export class QuotesService {
     return quote;
   }
 
+  private async requireBookingDiscussion(customerId: string, chefUserId: string) {
+    if (!(await hasBookingDiscussion(this.prisma, customerId, chefUserId))) {
+      throw new BadRequestException(
+        'The customer and cook must each send a message in their in-app conversation before requesting or sending a quote.',
+      );
+    }
+  }
+
   async updatePrice(chefUserId: string, quoteId: string, dto: UpdateQuotePriceDto) {
     const chef = await this.getApprovedChefForUser(chefUserId);
     const quote = await this.prisma.quote.findUnique({
       where: { id: quoteId },
-      select: { chefId: true, status: true, bookingRequestId: true },
+      select: {
+        chefId: true,
+        status: true,
+        bookingRequestId: true,
+        bookingRequest: { select: { customerId: true } },
+      },
     });
 
     if (!quote) throw new NotFoundException('Quote not found.');
@@ -326,6 +345,7 @@ export class QuotesService {
     if (quote.status !== QuoteStatus.pending) {
       throw new BadRequestException('Only pending quotes can be revised.');
     }
+    await this.requireBookingDiscussion(quote.bookingRequest.customerId, chefUserId);
 
     return this.prisma.$transaction(async (transaction) => {
       const updated = await transaction.quote.update({

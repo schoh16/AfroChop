@@ -33,11 +33,12 @@ type Props = {
   apiBaseUrl: string;
   initialPartner?: MessagePartner | null;
   onBack: () => void;
+  onRequestQuote?: () => void;
 };
 
 const POLL_MS = 5000;
 
-export function Messaging({ token, apiBaseUrl, initialPartner = null, onBack }: Props) {
+export function Messaging({ token, apiBaseUrl, initialPartner = null, onBack, onRequestQuote }: Props) {
   const [partner, setPartner] = useState<MessagePartner | null>(initialPartner);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -45,6 +46,7 @@ export function Messaging({ token, apiBaseUrl, initialPartner = null, onBack }: 
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [discussionComplete, setDiscussionComplete] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
   const request = useCallback(
@@ -74,10 +76,11 @@ export function Messaging({ token, apiBaseUrl, initialPartner = null, onBack }: 
   const load = useCallback(async () => {
     try {
       if (partnerId) {
-        const result = await request<{ participant: Participant; items: ChatMessage[] }>(
+        const result = await request<{ participant: Participant; items: ChatMessage[]; discussionComplete: boolean }>(
           `/messages/with/${partnerId}?limit=100`,
         );
         setMessages(result.items);
+        setDiscussionComplete(result.discussionComplete === true);
       } else {
         setConversations(await request<ConversationSummary[]>('/messages/conversations'));
       }
@@ -107,6 +110,7 @@ export function Messaging({ token, apiBaseUrl, initialPartner = null, onBack }: 
       setMessages((current) => [...current, sent]);
       setDraft('');
       setError(null);
+      await load();
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : 'Could not send message.');
     } finally {
@@ -134,6 +138,7 @@ export function Messaging({ token, apiBaseUrl, initialPartner = null, onBack }: 
                   accessibilityRole="button"
                   onPress={() => {
                     setMessages([]);
+                    setDiscussionComplete(false);
                     setLoading(true);
                     setPartner({ id: item.participant.id, name: item.participant.name });
                   }}
@@ -176,6 +181,22 @@ export function Messaging({ token, apiBaseUrl, initialPartner = null, onBack }: 
         }}
       />
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      {onRequestQuote ? (
+        <View style={styles.bookingSteps}>
+          <Text style={styles.empty}>
+            Discuss the menu, portions, date, location, and dietary needs. Both of you must send a message before requesting a quote.
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            disabled={loading || sending || !discussionComplete || Boolean(error)}
+            onPress={onRequestQuote}
+          >
+            <Text style={styles.back}>
+              {discussionComplete ? 'Continue to quote request' : 'Waiting for both of you to reply'}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
       <ScrollView
         ref={scrollRef}
         contentContainerStyle={styles.thread}
@@ -242,6 +263,7 @@ function Header({ title, onBack }: { title: string; onBack: () => void }) {
 }
 
 const styles = StyleSheet.create({
+  bookingSteps: { padding: 12, gap: 8 },
   container: { flex: 1, backgroundColor: '#fff7ed' },
   header: {
     flexDirection: 'row',

@@ -2,7 +2,8 @@
   "expo": {
     "name": "AfroChop",
     "slug": "afrochop",
-    "version": "1.0.3",
+    "scheme": "afrochop",
+    "version": "1.0.4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -27,16 +28,18 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "expo-router",
       "expo-secure-store",
       "expo-video",
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow AfroChop to select photos and videos for your public seller profile and showcase.",
+          "photosPermission": "Allow AfroChop to select photos for cook profiles and food showcases.",
           "cameraPermission": false,
           "microphonePermission": false
         }
-      ]
+      ],
+      "expo-font"
     ],
     "extra": {
       "eas": {

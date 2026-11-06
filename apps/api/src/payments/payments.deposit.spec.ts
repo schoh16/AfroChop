@@ -109,9 +109,19 @@ describe('deposit checkout', () => {
     await expect(service.createDepositCheckout('c1', 'q1')).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('rejects unaccepted quotes', async () => {
-    const { service } = build({ ...accepted, status: 'pending' });
+  it.each(['pending', 'declined', 'expired'])('rejects %s quotes before starting payment', async (status) => {
+    const { service, stripe, money } = build({ ...accepted, status });
     await expect(service.createDepositCheckout('c1', 'q1')).rejects.toBeInstanceOf(ConflictException);
+    expect(stripe.checkout.sessions.create).not.toHaveBeenCalled();
+    expect(money.prepareCheckout).not.toHaveBeenCalled();
+  });
+
+  it('rejects an accepted quote unless its booking is awaiting payment', async () => {
+    const { service, stripe } = build({
+      ...accepted, bookingRequest: { ...accepted.bookingRequest, status: 'quoted' },
+    });
+    await expect(service.createDepositCheckout('c1', 'q1')).rejects.toBeInstanceOf(ConflictException);
+    expect(stripe.checkout.sessions.create).not.toHaveBeenCalled();
   });
 
   it('reuses an existing open checkout session instead of creating a second charge path', async () => {

@@ -140,7 +140,6 @@ const serviceOptions = [
   ['prepared_meals', 'Prepared meals'],
   ['bulk_meal_prep', 'Meal prep'],
   ['in_home_cooking', 'In-home cooking'],
-  ['grocery_shopping', 'Grocery shopping'],
   ['special_event', 'Special events'],
   ['postpartum', 'Postpartum meals'],
   ['recurring', 'Recurring service'],
@@ -207,12 +206,15 @@ export function ChefWorkspace({
   const [offersPickup, setOffersPickup] = useState(false);
   const [profileServiceAreas, setProfileServiceAreas] = useState<ChefServiceAreaDetails[]>([]);
   const [application, setApplication] = useState<ChefApplication | null>(null);
+  const [applicationPhone, setApplicationPhone] = useState('');
+  const [applicationExperience, setApplicationExperience] = useState('');
+  const [applicationOrigin, setApplicationOrigin] = useState('');
+  const [applicationAvailability, setApplicationAvailability] = useState('');
   const [applicationAddressLine1, setApplicationAddressLine1] = useState('');
   const [applicationAddressLine2, setApplicationAddressLine2] = useState('');
   const [applicationAddressCity, setApplicationAddressCity] = useState('');
   const [applicationAddressRegion, setApplicationAddressRegion] = useState('');
   const [applicationAddressPostalCode, setApplicationAddressPostalCode] = useState('');
-  const [applicationAddressCountryCode, setApplicationAddressCountryCode] = useState('');
   const [activePage, setActivePage] = useState<ChefWorkspacePage>('profile');
   const [chatPartner, setChatPartner] = useState<MessagePartner | null>(null);
   const [showWorkspaceMenu, setShowWorkspaceMenu] = useState(false);
@@ -261,7 +263,7 @@ export function ChefWorkspace({
       setProfileCountryCode(savedProfile.countryCode ?? '');
       setProfileSpecialties(savedProfile.specialties.join(', '));
       setProfileLanguages(savedProfile.languages.join(', '));
-      setProfileServiceTypes(savedProfile.serviceTypes);
+      setProfileServiceTypes(savedProfile.serviceTypes.filter((type) => type !== 'grocery_shopping'));
       setProfileServiceRadius(String(savedProfile.serviceRadiusKm ?? 25));
       setProfileImageUrl(savedProfile.profileImageUrl ?? '');
       setCoverImageUrl(savedProfile.coverImageUrl ?? '');
@@ -378,10 +380,9 @@ export function ChefWorkspace({
   }
 
   async function submitApplication() {
-    if (!applicationAddressLine1.trim() || !applicationAddressCity.trim() ||
-        !applicationAddressRegion.trim() || !applicationAddressPostalCode.trim() ||
-        !/^[A-Za-z]{2}$/.test(applicationAddressCountryCode.trim())) {
-      setError('Enter your complete visit address, including a two-letter country code.');
+    if (applicationExperience.trim() &&
+        (!/^\d{1,3}$/.test(applicationExperience.trim()) || Number(applicationExperience) > 100)) {
+      setError('Cooking experience must be a whole number from 0 to 100 when provided.');
       return;
     }
     setIsSaving(true);
@@ -391,16 +392,19 @@ export function ChefWorkspace({
       const saved = await request<ChefApplication>('/chefs/me/application', {
         method: 'POST',
         body: JSON.stringify({
+          phoneNumber: applicationPhone.trim(),
+          experienceYears: applicationExperience.trim() ? Number(applicationExperience) : undefined,
+          countryOfOrigin: applicationOrigin.trim(),
+          meetingAvailability: applicationAvailability.trim(),
           line1: applicationAddressLine1.trim(),
           line2: applicationAddressLine2.trim() || undefined,
           city: applicationAddressCity.trim(),
           region: applicationAddressRegion.trim(),
           postalCode: applicationAddressPostalCode.trim(),
-          countryCode: applicationAddressCountryCode.trim().toUpperCase(),
         }),
       });
       setApplication(saved);
-      setNotice('Application submitted. AfroChop will contact you to arrange a home visit.');
+      setNotice('Application submitted. AfroChop will contact you to confirm any missing details and schedule a meeting.');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not submit your application.');
     } finally {
@@ -634,7 +638,7 @@ export function ChefWorkspace({
       });
       setQuoteAmounts((current) => ({ ...current, [booking.id]: '' }));
       setQuoteNotes((current) => ({ ...current, [booking.id]: '' }));
-      setNotice('Your quote was sent to the customer. AfroChop will notify them to review it.');
+      setNotice('Your quote was sent to the customer for approval. They can proceed to payment only after approving it.');
       await refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not send this quote.');
@@ -701,7 +705,7 @@ export function ChefWorkspace({
           <Text style={styles.subtitle}>
             {activePage === 'profile' ? 'Show customers what you cook, where you serve, and how to find you.'
               : activePage === 'menu' ? 'Build your dishes and reusable menus for customer requests.'
-                : activePage === 'quotes' ? 'Review customer requests and send a price directly to the customer.'
+                : activePage === 'quotes' ? 'Discuss the booking in messages first, then send a quote. The customer approves it before paying.'
                 : activePage === 'messages' ? 'Chat with customers to agree on details before you quote.'
                 : activePage === 'verification' ? 'Review your identity and business verification progress.'
                   : activePage === 'payments' ? 'Connect and manage your payout account.'
@@ -866,14 +870,31 @@ export function ChefWorkspace({
           <>
             {application?.status === 'rejected' ? (
               <Text style={styles.helper}>
-                Your previous application was not approved. Update your visit address below to submit a new application.
+                Your previous application was not approved. Update your application details below to submit a new application.
               </Text>
             ) : (
               <Text style={styles.helper}>
-                Apply to join AfroChop. An authorised team member will visit this address to interview you and help set up your profile.
-                Your exact address is encrypted and only shared with authorised staff for arranging the visit.
+                Apply to join AfroChop. Tell us about your cooking experience and when we can call to schedule a meeting and home visit.
+                Your application details and exact address are encrypted and only shared with authorised staff.
               </Text>
             )}
+            <Text style={styles.helper}>Your name and email are required and come from your signed-in account. The additional application fields below are optional; staff can contact you by email to confirm missing details.</Text>
+            <Text style={styles.helper}>Phone number (optional)</Text>
+            <TextInput accessibilityLabel="Application phone number" placeholder="Phone number"
+              keyboardType="phone-pad" value={applicationPhone} onChangeText={setApplicationPhone}
+              maxLength={40} editable={!isSaving} style={styles.input} />
+            <Text style={styles.helper}>Years of cooking experience</Text>
+            <TextInput accessibilityLabel="Years of cooking experience" placeholder="For example: 5"
+              keyboardType="number-pad" value={applicationExperience} onChangeText={setApplicationExperience}
+              maxLength={3} editable={!isSaving} style={styles.input} />
+            <Text style={styles.helper}>Country of origin (where you are from)</Text>
+            <TextInput accessibilityLabel="Country of origin" placeholder="For example: Cameroon"
+              value={applicationOrigin} onChangeText={setApplicationOrigin}
+              maxLength={100} editable={!isSaving} style={styles.input} />
+            <Text style={styles.helper}>Availability for a call and meeting, including your time zone</Text>
+            <TextInput accessibilityLabel="Call and meeting availability" placeholder="For example: Mondays and Wednesdays, 2–5 PM, America/New_York"
+              value={applicationAvailability} onChangeText={setApplicationAvailability}
+              multiline maxLength={2000} editable={!isSaving} style={styles.input} />
             <TextInput
               accessibilityLabel="Visit street address"
               placeholder="Street address"
@@ -912,15 +933,6 @@ export function ChefWorkspace({
               value={applicationAddressPostalCode}
               onChangeText={setApplicationAddressPostalCode}
               maxLength={32}
-              style={styles.input}
-            />
-            <TextInput
-              accessibilityLabel="Visit country code"
-              placeholder="Country code (2 letters)"
-              autoCapitalize="characters"
-              value={applicationAddressCountryCode}
-              onChangeText={setApplicationAddressCountryCode}
-              maxLength={2}
               style={styles.input}
             />
             <Pressable

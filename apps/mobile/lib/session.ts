@@ -4,7 +4,7 @@ import * as SecureStore from 'expo-secure-store';
 export type AccountRole = 'customer' | 'chef' | 'farmer';
 export type AccountSession = {
   id: string; token: string; name: string; email: string;
-  role: AccountRole; requiresRoleSelection: boolean;
+  role: AccountRole | 'admin'; requiresRoleSelection: boolean;
   expiresIn: number; refreshToken?: string;
 };
 
@@ -23,7 +23,8 @@ export function isAccountSession(value: unknown): value is AccountSession {
   const item = value as Record<string, unknown>;
   return typeof item.id === 'string' && typeof item.token === 'string' &&
     typeof item.email === 'string' && typeof item.name === 'string' &&
-    ['customer', 'chef', 'farmer'].includes(String(item.role)) &&
+    ['customer', 'chef', 'farmer', 'admin'].includes(String(item.role)) &&
+    (item.role !== 'admin' || item.requiresRoleSelection === false) &&
     typeof item.requiresRoleSelection === 'boolean' &&
     typeof item.expiresIn === 'number' && item.expiresIn > 0 &&
     (item.refreshToken === undefined || typeof item.refreshToken === 'string');

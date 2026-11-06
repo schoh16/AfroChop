@@ -7,6 +7,7 @@ import {
 import { UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SendMessageDto } from './dto/send-message.dto.js';
+import { hasBookingDiscussion } from './booking-discussion.js';
 
 const participantSelect = {
   id: true,
@@ -85,6 +86,7 @@ export class MessagesService {
 
     return {
       participant: this.describeParticipant(otherUser),
+      discussionComplete: await hasBookingDiscussion(this.prisma, userId, otherUserId),
       items: items.reverse(),
       page,
       limit,
