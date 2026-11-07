@@ -434,6 +434,15 @@ above. This dashboard contains private information and should not be publicly ca
 
 ## Booking flow: discussion, quote, approval, payment
 
+Customer setup includes an optional "What brings you to AfroChop?" multi-select:
+bulk meal prep, party/event, postpartum meal support, everyday African meals,
+in-home cooking, and Other / just exploring. Customers may skip, clear all
+choices, or change them later in Menu > Preferences. Reasons are saved in the
+existing device-local preferences scoped by account and API environment; older
+saved preferences without reasons remain valid. No medical details are requested.
+Reasons are not sent to cooks or marketing providers, do not limit discovery,
+and do not create bookings or bypass discussion, quote approval, or payment.
+
 1. The customer opens the cook's profile and starts an in-app conversation.
 2. Both the customer and cook must send at least one message to each other.
    The conversation response exposes `discussionComplete`, based on the full

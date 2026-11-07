@@ -40,7 +40,7 @@ import { authTokenStorage } from './lib/authTokenStorage';
 import { authenticatedFetch as fetch, isAccountSession } from './lib/session';
 import { avatarUrl } from './lib/avatar';
 import { marketingContactRequiresOptIn } from './lib/marketingRegions';
-import { customerPreferencesKey, parseCustomerPreferences } from './lib/customerPreferences';
+import { customerPreferencesKey, parseCustomerPreferences, customerReasonOptions, type CustomerReason } from './lib/customerPreferences';
 
 const featuredCountryCodes = ['NG', 'GH', 'CM', 'MA', 'ET', 'SN', 'KE', 'ZA'];
 const apiBaseUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000/api';
@@ -196,6 +196,8 @@ export default function App({ adminRoute = false }: { adminRoute?: boolean }) {
   const [customerMarketingSharingTouched, setCustomerMarketingSharingTouched] = useState(false);
   const [isNewCustomer, setIsNewCustomer] = useState(false);
   const [customerOnboarding, setCustomerOnboarding] = useState(false);
+  const [customerReasons, setCustomerReasons] = useState<CustomerReason[]>([]);
+  const [savedCustomerReasons, setSavedCustomerReasons] = useState<CustomerReason[]>([]);
   const [isRestoringSession, setIsRestoringSession] = useState(true);
   const [pendingAccount, setPendingAccount] = useState<AccountSession | null>(null);
   const [favoriteCountries, setFavoriteCountries] = useState<string[]>([]);
@@ -242,7 +244,7 @@ export default function App({ adminRoute = false }: { adminRoute?: boolean }) {
     if (!customerId) return;
     void AsyncStorage.getItem(customerPreferencesKey(apiBaseUrl, customerId)).then((raw) => {
       if (!active) return;
-      const saved = raw ? parseCustomerPreferences(raw) : { city: '', state: '', countryCode: 'US', favoriteCountries: [] };
+      const saved = raw ? parseCustomerPreferences(raw) : { city: '', state: '', countryCode: 'US', favoriteCountries: [], reasons: [] };
       setCity(saved.city);
       setStateRegion(saved.state);
       setHomeCountryCode(saved.countryCode || 'US');
@@ -251,6 +253,8 @@ export default function App({ adminRoute = false }: { adminRoute?: boolean }) {
       setOnboardingCountryCode(saved.countryCode);
       setOnboardingCountryName('');
       setFavoriteCountries(saved.favoriteCountries);
+      setCustomerReasons(saved.reasons);
+      setSavedCustomerReasons(saved.reasons);
       setSelectedCountryId(undefined);
       setSelectedFood('');
       restorePreferenceSearch(saved.city, saved.state);
@@ -302,6 +306,8 @@ export default function App({ adminRoute = false }: { adminRoute?: boolean }) {
     setFarmerSessionToken(null);
     setCustomerSessionToken(null);
     setCustomerId(null);
+    setCustomerReasons([]);
+    setSavedCustomerReasons([]);
     setAdminSession(null);
     if (session.role === 'admin') {
       setAdminSession(session);
@@ -317,12 +323,14 @@ export default function App({ adminRoute = false }: { adminRoute?: boolean }) {
       setCustomerId(session.id);
     }
     if (session.role !== 'farmer') {
-      setIsNewCustomer(Boolean(pendingAccount) && session.role === 'customer');
+      const newCustomer = Boolean(pendingAccount) && session.role === 'customer';
+      setIsNewCustomer(newCustomer);
       setGuideStep(0);
       setGuideError(null);
       try {
         const completed = await AsyncStorage.getItem(guideCompletionKey);
         if (!completed) setGuideRole(session.role);
+        else if (newCustomer) setCustomerOnboarding(true);
       } catch (error) {
         setGuideRole(session.role);
         setGuideError(error instanceof Error ? error.message : 'Could not load your guide preference.');
@@ -711,6 +719,33 @@ export default function App({ adminRoute = false }: { adminRoute?: boolean }) {
               <Text style={styles.linkText}>Sign out</Text>
             </Pressable>
             {discoveryError ? <Text accessibilityRole="alert" style={styles.stateError}>{discoveryError}</Text> : null}
+            <Text style={styles.formSectionTitle}>What brings you to AfroChop?</Text>
+            <Text style={styles.signupIntro}>
+              Optional: choose all that apply, or skip for now. You can change these later in Preferences.
+              These choices stay on this device for your account and are not shared with cooks or promotional contact lists.
+              Choosing postpartum meal support does not require any medical details.
+            </Text>
+            <View style={styles.allergenChoices}>
+              {customerReasonOptions.map((option) => {
+                const selected = customerReasons.includes(option.key);
+                return (
+                  <Pressable
+                    key={option.key}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: selected }}
+                    disabled={isSavingOnboarding}
+                    style={[styles.allergenChoice, selected && styles.allergenChoiceSelected]}
+                    onPress={() => setCustomerReasons((current) => current.includes(option.key)
+                      ? current.filter((reason) => reason !== option.key)
+                      : [...current, option.key])}
+                  >
+                    <Text style={[styles.allergenChoiceText, selected && styles.allergenChoiceTextSelected]}>
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
             <Text style={styles.formSectionTitle}>Where should we look?</Text>
             <LocationDropdowns
               countries={marketCountries}
@@ -799,7 +834,9 @@ export default function App({ adminRoute = false }: { adminRoute?: boolean }) {
                   state: onboardingState.trim(),
                   countryCode: onboardingCountryCode,
                   favoriteCountries,
+                  reasons: customerReasons,
                   }));
+                  setSavedCustomerReasons(customerReasons);
                   setCity(onboardingCity.trim());
                   setStateRegion(onboardingState.trim());
                   setHomeCountryCode(onboardingCountryCode || 'US');
@@ -824,7 +861,9 @@ export default function App({ adminRoute = false }: { adminRoute?: boolean }) {
             />
             <Pressable
               accessibilityRole="button"
+              disabled={isSavingOnboarding}
               onPress={() => {
+                setCustomerReasons(savedCustomerReasons);
                 setOnboardingCity('');
                 setOnboardingState('');
                 setCustomerOnboarding(false);
@@ -934,7 +973,7 @@ export default function App({ adminRoute = false }: { adminRoute?: boolean }) {
                 style={styles.customerMenuItem}
               >
                 <Text style={styles.customerMenuItemTitle}>Preferences</Text>
-                <Text style={styles.customerMenuItemDetail}>Manage your food and location preferences</Text>
+                <Text style={styles.customerMenuItemDetail}>Manage your reasons for using AfroChop, cuisines, and location</Text>
               </Pressable>
               <Pressable
                 accessibilityRole="button"
