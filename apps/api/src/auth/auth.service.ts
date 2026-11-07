@@ -37,6 +37,7 @@ export class AuthService {
     const tokens = await this.cognito.login(dto.email.trim().toLowerCase(), dto.password);
     const identity = await this.cognito.identity(tokens.token);
     const user = await this.linkIdentity(identity);
+    await this.confirmIdentityEmail(user.id, identity);
     return { ...await this.me(user.id), ...tokens };
   }
 
@@ -79,7 +80,35 @@ export class AuthService {
     const identity = await this.cognito.identity(tokens.token);
     const user = await this.prisma.user.findUnique({ where: { cognitoSub: identity.sub } });
     if (!user?.isActive) throw new UnauthorizedException('This account is inactive or not linked.');
+    await this.confirmIdentityEmail(user.id, identity);
     return { ...await this.me(user.id), ...tokens };
+  }
+
+  private async confirmIdentityEmail(userId: string, identity: { sub: string; email: string }) {
+    const verified = {
+      status: 'verified' as const,
+      verifiedAt: new Date(),
+      expiresAt: null,
+      provider: 'cognito',
+      providerReference: identity.sub,
+      reviewerNotes: null,
+    };
+    try {
+      await this.prisma.user.update({
+        where: { id: userId, cognitoSub: identity.sub, email: identity.email, isActive: true },
+        data: { verifications: { upsert: {
+          where: { userId_type: { userId, type: 'email' } },
+          create: { type: 'email', ...verified },
+          update: verified,
+        } } },
+        select: { id: true },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+        throw new UnauthorizedException('Your account or email has changed. Contact support before signing in again.');
+      }
+      throw error;
+    }
   }
 
   async me(userId: string) {

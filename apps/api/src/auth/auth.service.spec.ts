@@ -12,6 +12,7 @@ function setup() {
       findUnique: vi.fn(),
       create: vi.fn().mockImplementation(({ data }) => ({ id: 'new-id', ...data })),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      update: vi.fn().mockResolvedValue({ id: 'existing-id' }),
     },
   };
   const cognito = {
@@ -109,6 +110,29 @@ describe('Cognito account integration', () => {
     await expect(service.refresh('old-refresh')).resolves.toMatchObject({
       id: account.id, role: 'chef', token: 'renewed', refreshToken: 'rotated',
     });
+  });
+
+  it.each(['login', 'refresh'] as const)('records the Cognito-confirmed email during %s without verifying phone or identity', async (operation) => {
+      const { service, prisma, account } = setup();
+      prisma.user.findUnique.mockResolvedValue({ ...account, cognitoSub: 'cognito-sub' });
+      if (operation === 'login') await service.login({ email: account.email, password: 'Password123!' });
+      else await service.refresh('refresh');
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: account.id, cognitoSub: 'cognito-sub', email: account.email, isActive: true },
+        data: { verifications: { upsert: {
+          where: { userId_type: { userId: account.id, type: 'email' } },
+          create: expect.objectContaining({ type: 'email', status: 'verified', provider: 'cognito', providerReference: 'cognito-sub' }),
+          update: expect.objectContaining({ status: 'verified', verifiedAt: expect.any(Date), expiresAt: null, provider: 'cognito' }),
+        } } },
+        select: { id: true },
+      });
+    });
+
+  it('does not issue a session if saving the confirmed email fails', async () => {
+      const { service, prisma, account } = setup();
+      prisma.user.findUnique.mockResolvedValue({ ...account, cognitoSub: 'cognito-sub' });
+      prisma.user.update.mockRejectedValue(new Error('Database unavailable'));
+      await expect(service.login({ email: account.email, password: 'Password123!' })).rejects.toThrow('Database unavailable');
   });
 
   it('does not renew sessions for inactive or unlinked accounts', async () => {

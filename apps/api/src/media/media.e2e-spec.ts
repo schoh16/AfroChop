@@ -43,10 +43,11 @@ describe('Seller video API', () => {
   it('rejects unauthenticated and customer uploads', async () => {
     await request(app.getHttpServer()).post('/api/media/gallery/video').expect(401);
     await request(app.getHttpServer()).post('/api/media/gallery/video').auth('customer', { type: 'bearer' }).expect(403);
+    await request(app.getHttpServer()).post('/api/media/gallery/video').auth('farmer', { type: 'bearer' }).expect(403);
     expect(media.uploadVideo).not.toHaveBeenCalled();
   });
 
-  it.each(['chef', 'farmer'])('accepts a multipart %s video and caption', async (role) => {
+  it.each(['chef'])('accepts a multipart %s video and caption', async (role) => {
     media.uploadVideo.mockResolvedValue({ id: 'clip', mediaType: 'video', imageUrl: 'https://cdn.example/clip.mp4' });
     const response = await request(app.getHttpServer()).post('/api/media/gallery/video')
       .auth(role, { type: 'bearer' }).field('caption', 'Fresh food')
@@ -57,7 +58,7 @@ describe('Seller video API', () => {
 
   it('rejects a video one byte over 50 MB before the service is called', async () => {
     await request(app.getHttpServer()).post('/api/media/gallery/video')
-      .auth('farmer', { type: 'bearer' })
+      .auth('chef', { type: 'bearer' })
       .attach('file', Buffer.alloc(MAX_VIDEO_BYTES + 1), { filename: 'large.mp4', contentType: 'video/mp4' }).expect(413);
     expect(media.uploadVideo).not.toHaveBeenCalled();
   });
@@ -76,6 +77,6 @@ describe('Seller video API', () => {
       .attach('file', Buffer.from('video'), 'food.mp4').expect(400);
     media.uploadVideo.mockResolvedValue({ id: 'clip', mediaType: 'video' });
     await request(app.getHttpServer()).post('/api/media/gallery/video')
-      .auth('farmer', { type: 'bearer' }).attach('file', Buffer.from('video'), 'food.mp4').expect(201);
+      .auth('chef', { type: 'bearer' }).attach('file', Buffer.from('video'), 'food.mp4').expect(201);
   });
 });

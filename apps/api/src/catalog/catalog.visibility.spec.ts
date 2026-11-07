@@ -18,7 +18,7 @@ describe('public chef visibility across discovery surfaces', () => {
     expect(foods.map((name) => name.toLowerCase())).toEqual(['egusi soup', 'jollof rice', 'suya']);
     for (const model of [prisma.chefMenuEntry, prisma.chefDish]) {
       expect(model.findMany).toHaveBeenCalledWith(expect.objectContaining({
-        where: { chef: publicChefWhere },
+        where: { chef: publicChefWhere, ...(model === prisma.chefMenuEntry ? { isAvailable: true } : {}) },
       }));
     }
   });

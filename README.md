@@ -443,6 +443,18 @@ saved preferences without reasons remain valid. No medical details are requested
 Reasons are not sent to cooks or marketing providers, do not limit discovery,
 and do not create bookings or bypass discussion, quote approval, or payment.
 
+Discovery food names, text searches, and cuisine matches exclude unavailable
+custom menu entries. Quote creation and price revisions conditionally claim the
+still-open booking/quote inside serializable transactions; stale cook actions
+cannot revert customer approval or change an accepted amount. Payment holds last
+at most 24 hours and never extend past the service start. Passed service times
+cannot be approved or paid; an older unpaid checkout extending beyond the service
+start is expired rather than reused.
+
+Signing out or accepting a different account clears customer drafts, message
+targets, open request screens, and unsaved preferences. Responses from the
+previous account's unfinished requests cannot restore those screens or drafts.
+
 1. The customer opens the cook's profile and starts an in-app conversation.
 2. Both the customer and cook must send at least one message to each other.
    The conversation response exposes `discussionComplete`, based on the full
@@ -781,7 +793,11 @@ locally saved role. Role changes invalidate old-role JWTs; users on other
 devices must sign in again. Account choice does not verify identity, approve
 food safety, enable payouts, or replace the separate compliance gates.
 
-Registration creates pending email and phone verification records. Customers can view status, update an E.164 phone number, and verify email/phone codes from the booking form or My Requests. Changing a phone resets its verification. Configure `TWILIO_VERIFY_SERVICE_SID`, Twilio credentials, SMS delivery and the Twilio Verify email integration before enabling codes. Authenticated `POST /api/verification/me/:type/send-code` and `check-code` endpoints support only `email` and `phone`; checks accept `{ "code": "..." }`. Codes are checked by Twilio, never returned to the app or stored as plaintext. Challenges expire after ten minutes, allow five attempts, and enforce a 60-second resend delay and five sends per hour. Challenges are single-use and bound to the saved contact, including across contact changes. Provider failures surface explicitly; absent credentials never mark a user verified. Booking requests still fail closed unless email and phone are verified and unexpired; configured rules can require additional customer identity verification.
+The first sign-in creates marketplace verification records. Successful Cognito
+sign-in and session refresh record the provider-confirmed email as verified only
+for the same active, linked account and matching saved email. Email confirmation
+does not verify phone numbers or identity. Customers can view status, update an
+E.164 phone number, and verify email/phone codes from the booking form or My Requests. Changing a phone resets its verification. Configure `TWILIO_VERIFY_SERVICE_SID`, Twilio credentials, SMS delivery and the Twilio Verify email integration before enabling codes. Authenticated `POST /api/verification/me/:type/send-code` and `check-code` endpoints support only `email` and `phone`; checks accept `{ "code": "..." }`. Codes are checked by Twilio, never returned to the app or stored as plaintext. Challenges expire after ten minutes, allow five attempts, and enforce a 60-second resend delay and five sends per hour. Challenges are single-use and bound to the saved contact, including across contact changes. Provider failures surface explicitly; absent credentials never mark a user verified. Booking requests still fail closed unless email and phone are verified and unexpired; configured rules can require additional customer identity verification.
 
 Chefs have separate email, phone, identity, overall AfroChop approval, Stripe Connect, credential, permit, background-screening, and per-service/per-jurisdiction states. Stripe eligibility does not establish identity, food-safety, or screening approval. An administrator cannot approve a chef profile without verified email, phone, identity, and eligible Stripe Connect status. Service approval additionally requires an active jurisdiction rule and all rule-required credentials, permits, consented screening, and Stripe eligibility. Booking requests and chef quotes require the applicable service approval.
 

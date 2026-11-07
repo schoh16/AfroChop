@@ -367,10 +367,16 @@ export class PaymentsService {
       throw new ConflictException('Accept the quote before paying.');
     }
     const now = new Date();
+    if (booking.desiredDate && booking.desiredDate <= now) {
+      throw new ConflictException('The requested service time has passed. Discuss a new date with the cook before paying.');
+    }
     if (!booking.paymentHoldExpiresAt || booking.paymentHoldExpiresAt <= now) {
       throw new ConflictException('The 24-hour payment hold expired. Request a new quote to continue.');
     }
-    if (booking.paymentHoldExpiresAt.getTime() < now.getTime() + 30 * 60 * 1000) {
+    const checkoutExpiresAt = booking.desiredDate && booking.desiredDate < booking.paymentHoldExpiresAt
+      ? booking.desiredDate
+      : booking.paymentHoldExpiresAt;
+    if (checkoutExpiresAt.getTime() < now.getTime() + 30 * 60 * 1000) {
       throw new ConflictException('The payment hold is nearly expired. Request a new quote to continue.');
     }
     if (booking.stripeCheckoutSessionId) {
@@ -380,6 +386,11 @@ export class PaymentsService {
       if (existingSession.payment_status === 'paid') {
         await this.markDepositPaid(booking.id, existingSession.id);
         throw new ConflictException('Payment is already complete. Refresh your requests to see the booking.');
+      }
+      if (existingSession.status === 'open' && existingSession.expires_at * 1000 > checkoutExpiresAt.getTime()) {
+        await stripe.checkout.sessions.expire(existingSession.id);
+        await this.markDepositExpired(booking.id, quote.id, existingSession.id);
+        throw new ConflictException('The payment session extends beyond the service time. Request a new quote before paying.');
       }
       if (
         existingSession.status === 'open' &&
@@ -419,7 +430,7 @@ export class PaymentsService {
       mode: 'payment',
       allowed_payment_method_types: ['card'],
       client_reference_id: booking.id,
-      expires_at: Math.floor(booking.paymentHoldExpiresAt.getTime() / 1000),
+      expires_at: Math.floor(checkoutExpiresAt.getTime() / 1000),
       line_items: [
         {
           quantity: 1,

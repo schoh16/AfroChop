@@ -47,6 +47,8 @@ describe('QuotesService food-safety gates', () => {
     vi.unstubAllEnvs();
     vi.clearAllMocks();
     prisma.message.count.mockResolvedValue(1);
+    prisma.bookingRequest.updateMany.mockResolvedValue({ count: 1 });
+    prisma.quote.updateMany.mockResolvedValue({ count: 1 });
     const module = await Test.createTestingModule({
       providers: [
         QuotesService,
@@ -136,9 +138,10 @@ describe('QuotesService food-safety gates', () => {
     prisma.$transaction.mockImplementation((callback) => callback(prisma));
     const quote = await service.createChefQuote('chef-user-id', 'booking-id', { amount: 40 });
     expect(quote.status).toBe(QuoteStatus.pending);
-    expect(prisma.bookingRequest.update).toHaveBeenCalledWith({
-      where: { id: 'booking-id' }, data: { status: BookingStatus.quoted, quoteAmount: 40 },
-    });
+    expect(prisma.bookingRequest.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: 'booking-id', status: { in: [BookingStatus.requested, BookingStatus.quoted] } }),
+      data: { status: BookingStatus.quoted, quoteAmount: 40 },
+    }));
   });
 
   it('blocks revising a pending quote without a two-way discussion', async () => {
@@ -152,6 +155,35 @@ describe('QuotesService food-safety gates', () => {
       .rejects.toThrow('must each send a message');
     expect(prisma.quote.update).not.toHaveBeenCalled();
   });
+
+  it('does not create another quote when the booking was accepted during the request', async () => {
+      vi.stubEnv('DEV_SKIP_COMPLIANCE', 'true');
+      vi.stubEnv('NODE_ENV', 'test');
+      prisma.chefProfile.findFirst.mockResolvedValue({ id: 'chef-id' });
+      prisma.bookingRequest.findUnique.mockResolvedValue({
+        customerId: 'customer-id', chefId: 'chef-id', status: BookingStatus.quoted,
+        allergyReviewStatus: 'not_required',
+      });
+      prisma.bookingRequest.updateMany.mockResolvedValue({ count: 0 });
+      prisma.$transaction.mockImplementation((callback) => callback(prisma));
+      await expect(service.createChefQuote('chef-user-id', 'booking-id', { amount: 40 }))
+        .rejects.toThrow('no longer accepting quotes');
+      expect(prisma.quote.create).not.toHaveBeenCalled();
+    });
+
+  it('does not revise a quote accepted while the cook was editing it', async () => {
+      prisma.chefProfile.findFirst.mockResolvedValue({ id: 'chef-id' });
+      prisma.quote.findUnique.mockResolvedValue({
+        chefId: 'chef-id', status: QuoteStatus.pending, bookingRequestId: 'booking-id',
+        bookingRequest: { customerId: 'customer-id' },
+      });
+      prisma.quote.updateMany.mockResolvedValue({ count: 0 });
+      prisma.$transaction.mockImplementation((callback) => callback(prisma));
+      await expect(service.updatePrice('chef-user-id', 'quote-id', { amount: 50 }))
+        .rejects.toThrow('no longer be revised');
+      expect(prisma.quote.update).not.toHaveBeenCalled();
+      expect(prisma.bookingRequest.update).not.toHaveBeenCalled();
+    });
 
   it('requires the current allergy notice acknowledgment before creating a request', async () => {
     await expect(

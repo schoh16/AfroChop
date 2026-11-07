@@ -561,7 +561,7 @@ export class ChefsService {
           },
           {
             menuEntries: {
-              some: { name: { contains: query.q, mode: 'insensitive' } },
+              some: { isAvailable: true, name: { contains: query.q, mode: 'insensitive' } },
             },
           },
         ],
@@ -578,6 +578,7 @@ export class ChefsService {
             },
           } } },
           { menuEntries: { some: {
+            isAvailable: true,
             name: { equals: query.foodName, mode: 'insensitive' },
             ...(query.countryId ? { cuisineCountryId: query.countryId } : {}),
           } } },
@@ -600,7 +601,7 @@ export class ChefsService {
           ...(selectedCountry
             ? [{ specialties: { has: selectedCountry.name } }]
             : []),
-          { menuEntries: { some: { cuisineCountryId: query.countryId } } },
+          { menuEntries: { some: { isAvailable: true, cuisineCountryId: query.countryId } } },
         ],
       });
     }

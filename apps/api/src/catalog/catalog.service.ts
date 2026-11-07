@@ -164,7 +164,7 @@ export class CatalogService {
   async getAvailableFoods() {
     const [menuEntries, chefDishes] = await Promise.all([
       this.prisma.chefMenuEntry.findMany({
-        where: { chef: publicChefWhere },
+        where: { isAvailable: true, chef: publicChefWhere },
         select: { name: true },
         distinct: ['name'],
       }),

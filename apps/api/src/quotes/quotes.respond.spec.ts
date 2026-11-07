@@ -33,6 +33,22 @@ const pendingQuote = {
 };
 
 describe('QuotesService.respondToQuote', () => {
+  it('never holds a payment slot beyond the service start', async () => {
+    const desiredDate = new Date(Date.now() + 2 * 60 * 60_000);
+    const { service, tx } = build({
+      ...pendingQuote,
+      bookingRequest: {
+        ...pendingQuote.bookingRequest,
+        desiredDate,
+        serviceEndAt: new Date(desiredDate.getTime() + 60 * 60_000),
+      },
+    });
+    await service.respondToQuote('cust', 'q1', true);
+    expect(tx.bookingRequest.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: { status: 'awaiting_payment', paymentHoldExpiresAt: desiredDate },
+    }));
+  });
+
   it('accepts a quote and moves the booking to awaiting payment', async () => {
     const { service, tx } = build(pendingQuote);
     await service.respondToQuote('cust', 'q1', true);
@@ -60,5 +76,19 @@ describe('QuotesService.respondToQuote', () => {
   it('rejects answering a quote twice', async () => {
     const { service } = build({ ...pendingQuote, status: 'accepted' });
     await expect(service.respondToQuote('cust', 'q1', true)).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('does not reserve a service time that has already passed', async () => {
+    const { service, tx } = build({
+      ...pendingQuote,
+      bookingRequest: {
+        ...pendingQuote.bookingRequest,
+        desiredDate: new Date(Date.now() - 60_000),
+      },
+    });
+    await expect(service.respondToQuote('cust', 'q1', true)).rejects.toThrow('service time has passed');
+    expect(tx.quote.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'accepted' }) }),
+    );
   });
 });

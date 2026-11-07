@@ -215,6 +215,8 @@ export default function App({ adminRoute = false }: { adminRoute?: boolean }) {
   const [guideStep, setGuideStep] = useState(0);
   const [guideError, setGuideError] = useState<string | null>(null);
   const foodGeneration = useRef(0);
+  const accountGeneration = useRef(0);
+  const searchGeneration = useRef(0);
 
   const refreshFoods = useCallback(() => {
     const generation = ++foodGeneration.current;
@@ -300,14 +302,13 @@ export default function App({ adminRoute = false }: { adminRoute?: boolean }) {
 
   async function acceptAccount(session: AccountSession) {
     await authTokenStorage.set(JSON.stringify(session));
+    resetCustomerWorkspace();
     setCustomerAuthMessage(null);
     setPendingAccount(session.requiresRoleSelection ? session : null);
     setChefSessionToken(null);
     setFarmerSessionToken(null);
     setCustomerSessionToken(null);
     setCustomerId(null);
-    setCustomerReasons([]);
-    setSavedCustomerReasons([]);
     setAdminSession(null);
     if (session.role === 'admin') {
       setAdminSession(session);
@@ -340,6 +341,7 @@ export default function App({ adminRoute = false }: { adminRoute?: boolean }) {
 
   async function signOutAccount() {
     await authTokenStorage.remove();
+    resetCustomerWorkspace();
     setPendingAccount(null);
     setAdminSession(null);
     setChefSessionToken(null);
@@ -351,6 +353,51 @@ export default function App({ adminRoute = false }: { adminRoute?: boolean }) {
     setShowRequests(false);
     setShowMessages(false);
     setMessagePartner(null);
+  }
+
+  function resetCustomerWorkspace() {
+    accountGeneration.current += 1;
+    searchGeneration.current += 1;
+    setIsSavingOnboarding(false);
+    setIsSubmittingQuote(false);
+    setCustomerDisplayName(null);
+    setCustomerReasons([]);
+    setSavedCustomerReasons([]);
+    setFavoriteCountries([]);
+    setCustomerMarketingSharing(false);
+    setCustomerMarketingSharingTouched(false);
+    setIsNewCustomer(false);
+    setShowCustomerMenu(false);
+    setShowMessages(false);
+    setShowRequests(false);
+    setMessagePartner(null);
+    setSelectedChef(null);
+    setChefReviews(null);
+    setBookingOpen(false);
+    setBookingNotice(null);
+    setAllergyAcknowledged(false);
+    setAllergySelections([]);
+    setDietaryNotes('');
+    setQuoteDate('');
+    setQuoteStartTime('');
+    setQuoteDuration('120');
+    setQuoteServiceType('prepared_meals');
+    setQuoteJurisdiction('');
+    setQuoteServiceAddressId('');
+    setQuoteNotes('');
+    setSearchText('');
+    setCity('');
+    setStateRegion('');
+    setHomeCountryCode('US');
+    setSelectedCountryId(undefined);
+    setSelectedFood('');
+    setCustomerOnboarding(false);
+    setOnboardingCity('');
+    setOnboardingState('');
+    setOnboardingCountryCode('');
+    setOnboardingCountryName('');
+    setOnboardingError(null);
+    setDiscoveryError(null);
   }
 
   async function finishGuide() {
@@ -389,23 +436,12 @@ export default function App({ adminRoute = false }: { adminRoute?: boolean }) {
 
   async function signOutCustomer() {
     try {
-      await authTokenStorage.remove();
+      await signOutAccount();
     } catch (error) {
       setDiscoveryError(error instanceof Error ? error.message : 'Could not clear saved sign-in.');
       return;
     }
 
-    setCustomerSessionToken(null);
-    setCustomerId(null);
-    setCustomerDisplayName(null);
-    setShowCustomerMenu(false);
-    setCustomerOnboarding(false);
-    setGuideRole(null);
-    setBookingOpen(false);
-    setBookingNotice(null);
-    setSelectedChef(null);
-    setChefReviews(null);
-    setDiscoveryError(null);
     setCustomerAuthMessage(null);
   }
 
@@ -416,6 +452,7 @@ export default function App({ adminRoute = false }: { adminRoute?: boolean }) {
     serviceState = stateRegion,
     foodName = selectedFood,
   ) {
+    const generation = ++searchGeneration.current;
     setIsLoading(true);
     setDiscoveryError(null);
     const params = new URLSearchParams();
@@ -431,12 +468,14 @@ export default function App({ adminRoute = false }: { adminRoute?: boolean }) {
         throw new Error(`Chef search failed (${response.status}).`);
       }
       const data: { items: ChefSummary[] } = await response.json();
+      if (generation !== searchGeneration.current) return;
       setChefs(data.items);
     } catch (error) {
+      if (generation !== searchGeneration.current) return;
       setDiscoveryError(error instanceof Error ? error.message : 'Could not load chefs.');
       setChefs([]);
     } finally {
-      setIsLoading(false);
+      if (generation === searchGeneration.current) setIsLoading(false);
     }
   }
 
@@ -481,6 +520,7 @@ export default function App({ adminRoute = false }: { adminRoute?: boolean }) {
     const countryCode = selectedChef.countryCode ?? homeCountryCode;
     const jurisdictionCode = `${countryCode}-${quoteJurisdiction.trim().toUpperCase()}`;
 
+    const generation = accountGeneration.current;
     setIsSubmittingQuote(true);
     try {
       const response = await fetch(`${apiBaseUrl}/quotes/request`, {
@@ -508,6 +548,7 @@ export default function App({ adminRoute = false }: { adminRoute?: boolean }) {
         const message = Array.isArray(result.message) ? result.message.join(' ') : result.message;
         throw new Error(message ?? `Quote request failed (${response.status}).`);
       }
+      if (generation !== accountGeneration.current) return;
       setBookingNotice(
         allergySelections.length || dietaryNotes.trim()
           ? 'Your quote request and allergy/dietary details were sent to the cook for review.'
@@ -520,9 +561,10 @@ export default function App({ adminRoute = false }: { adminRoute?: boolean }) {
       setBookingOpen(false);
       setShowRequests(true);
     } catch (error) {
+      if (generation !== accountGeneration.current) return;
       setBookingNotice(error instanceof Error ? error.message : 'Could not send your quote request.');
     } finally {
-      setIsSubmittingQuote(false);
+      if (generation === accountGeneration.current) setIsSubmittingQuote(false);
     }
   }
 
@@ -565,6 +607,7 @@ export default function App({ adminRoute = false }: { adminRoute?: boolean }) {
   }, []);
 
   async function openChefProfile(chefId: string) {
+    const generation = accountGeneration.current;
     setDiscoveryError(null);
     try {
       const [profileResponse, reviewsResponse] = await Promise.all([
@@ -575,23 +618,28 @@ export default function App({ adminRoute = false }: { adminRoute?: boolean }) {
       if (!reviewsResponse.ok) throw new Error(`Chef reviews failed (${reviewsResponse.status}).`);
       const profile: ChefSummary = await profileResponse.json();
       const reviews: ChefReviewList = await reviewsResponse.json();
+      if (generation !== accountGeneration.current) return;
       setSelectedChef(profile);
       setChefReviews(reviews);
       setReviewSort('newest');
     } catch (error) {
+      if (generation !== accountGeneration.current) return;
       setDiscoveryError(error instanceof Error ? error.message : 'Could not load chef profile.');
     }
   }
 
   async function loadChefReviews(chefId: string, sort: ReviewSort) {
+    const generation = accountGeneration.current;
     setDiscoveryError(null);
     try {
       const response = await fetch(`${apiBaseUrl}/chefs/${chefId}/reviews?sort=${sort}`);
       if (!response.ok) throw new Error(`Chef reviews failed (${response.status}).`);
       const reviews: ChefReviewList = await response.json();
+      if (generation !== accountGeneration.current) return;
       setChefReviews(reviews);
       setReviewSort(sort);
     } catch (error) {
+      if (generation !== accountGeneration.current) return;
       setDiscoveryError(error instanceof Error ? error.message : 'Could not load reviews.');
     }
   }
@@ -802,6 +850,7 @@ export default function App({ adminRoute = false }: { adminRoute?: boolean }) {
               label="Explore African Food"
               loading={isSavingOnboarding}
               onPress={() => {
+                const generation = accountGeneration.current;
                 setIsSavingOnboarding(true);
                 setOnboardingError(null);
                 void (async () => {
@@ -828,6 +877,7 @@ export default function App({ adminRoute = false }: { adminRoute?: boolean }) {
                       contactSyncNotice = 'Your preference was saved. Contact-list syncing is not configured yet.';
                     }
                   }
+                  if (generation !== accountGeneration.current) return;
                   if (!customerId) throw new Error('Sign in again before saving your preferences.');
                   await AsyncStorage.setItem(customerPreferencesKey(apiBaseUrl, customerId), JSON.stringify({
                   city: onboardingCity.trim(),
@@ -836,6 +886,7 @@ export default function App({ adminRoute = false }: { adminRoute?: boolean }) {
                   favoriteCountries,
                   reasons: customerReasons,
                   }));
+                  if (generation !== accountGeneration.current) return;
                   setSavedCustomerReasons(customerReasons);
                   setCity(onboardingCity.trim());
                   setStateRegion(onboardingState.trim());
@@ -853,10 +904,14 @@ export default function App({ adminRoute = false }: { adminRoute?: boolean }) {
                     onboardingState.trim(),
                   );
                 })()
-                  .catch((error: unknown) => setOnboardingError(
-                    error instanceof Error ? error.message : 'Could not save your preferences.',
-                  ))
-                  .finally(() => setIsSavingOnboarding(false));
+                  .catch((error: unknown) => {
+                    if (generation === accountGeneration.current) setOnboardingError(
+                      error instanceof Error ? error.message : 'Could not save your preferences.',
+                    );
+                  })
+                  .finally(() => {
+                    if (generation === accountGeneration.current) setIsSavingOnboarding(false);
+                  });
               }}
             />
             <Pressable

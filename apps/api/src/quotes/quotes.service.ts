@@ -300,8 +300,18 @@ export class QuotesService {
       }
     }
 
-    const quote = await this.prisma.$transaction(async (transaction) => {
-      const quote = await transaction.quote.create({
+    const quote = await this.mutatePendingQuote(async (transaction) => {
+      const claim = await transaction.bookingRequest.updateMany({
+        where: {
+          id: bookingRequestId,
+          chefId: chef.id,
+          status: { in: [BookingStatus.requested, BookingStatus.quoted] },
+          allergyReviewStatus: { in: ['not_required', 'accepted'] },
+        },
+        data: { status: BookingStatus.quoted, quoteAmount: dto.amount },
+      });
+      if (claim.count !== 1) throw new ConflictException('This request is no longer accepting quotes. Refresh your bookings.');
+      return transaction.quote.create({
         data: {
           bookingRequestId,
           chefId: chef.id,
@@ -310,11 +320,6 @@ export class QuotesService {
           notes: dto.notes,
         },
       });
-      await transaction.bookingRequest.update({
-        where: { id: bookingRequestId },
-        data: { status: BookingStatus.quoted, quoteAmount: dto.amount },
-      });
-      return quote;
     });
     await this.smsNotifications?.notifyCustomerOrderStatus(bookingRequestId, 'quoted');
     return quote;
@@ -347,17 +352,37 @@ export class QuotesService {
     }
     await this.requireBookingDiscussion(quote.bookingRequest.customerId, chefUserId);
 
-    return this.prisma.$transaction(async (transaction) => {
-      const updated = await transaction.quote.update({
-        where: { id: quoteId },
+    return this.mutatePendingQuote(async (transaction) => {
+      const claim = await transaction.quote.updateMany({
+        where: {
+          id: quoteId,
+          chefId: chef.id,
+          status: QuoteStatus.pending,
+          bookingRequest: { status: BookingStatus.quoted },
+        },
         data: { amount: dto.amount },
       });
-      await transaction.bookingRequest.update({
-        where: { id: quote.bookingRequestId },
+      if (claim.count !== 1) throw new ConflictException('This quote can no longer be revised. Refresh your bookings.');
+      const bookingClaim = await transaction.bookingRequest.updateMany({
+        where: { id: quote.bookingRequestId, chefId: chef.id, status: BookingStatus.quoted },
         data: { quoteAmount: dto.amount },
       });
-      return updated;
+      if (bookingClaim.count !== 1) throw new ConflictException('This booking was already updated. Refresh your bookings.');
+      return transaction.quote.findUniqueOrThrow({ where: { id: quoteId } });
     });
+  }
+
+  private async mutatePendingQuote<T>(action: (transaction: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    try {
+      return await this.prisma.$transaction(action, {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+        throw new ConflictException('The quote or booking changed. Refresh your bookings and try again.');
+      }
+      throw error;
+    }
   }
 
   async respondToQuote(customerId: string, quoteId: string, accept: boolean) {
@@ -425,6 +450,12 @@ export class QuotesService {
           if (!booking.chefId || !booking.desiredDate || !booking.serviceEndAt) {
             throw new ConflictException('This booking is missing the time details needed to reserve a slot.');
           }
+          if (booking.desiredDate <= now) {
+            throw new ConflictException('The requested service time has passed. Discuss a new date with the cook.');
+          }
+          if (booking.serviceEndAt <= booking.desiredDate) {
+            throw new ConflictException('This booking has invalid time details. Request a new quote.');
+          }
           const conflictingBooking = await transaction.bookingRequest.findFirst({
             where: {
               chefId: booking.chefId,
@@ -457,7 +488,10 @@ export class QuotesService {
             throw new ConflictException('This quote was already answered.');
           }
 
-          const holdExpiresAt = new Date(now.getTime() + BOOKING_PAYMENT_HOLD_MS);
+          const holdExpiresAt = new Date(Math.min(
+            now.getTime() + BOOKING_PAYMENT_HOLD_MS,
+            booking.desiredDate.getTime(),
+          ));
           const bookingClaim = await transaction.bookingRequest.updateMany({
             where: { id: booking.id, status: BookingStatus.quoted },
             data: {

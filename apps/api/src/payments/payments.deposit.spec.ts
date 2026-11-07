@@ -74,6 +74,46 @@ const acceptedWithSession = {
 };
 
 describe('deposit checkout', () => {
+  it('expires an unpaid older checkout that would allow payment beyond service start', async () => {
+    const checkout = build({
+      ...acceptedWithSession,
+      bookingRequest: {
+        ...acceptedWithSession.bookingRequest,
+        desiredDate: new Date(Date.now() + 2 * 60 * 60_000),
+      },
+    }, {
+      id: 'cs_1', status: 'open', payment_status: 'unpaid',
+      expires_at: Math.floor((Date.now() + 3 * 60 * 60_000) / 1000),
+      url: 'https://checkout.stripe.com/existing',
+    });
+    await expect(checkout.service.createDepositCheckout('c1', 'q1')).rejects.toThrow('extends beyond');
+    expect(checkout.stripe.checkout.sessions.expire).toHaveBeenCalledWith('cs_1');
+    expect(checkout.transaction.bookingRequest.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: 'expired' } }),
+    );
+    expect(checkout.stripe.checkout.sessions.create).not.toHaveBeenCalled();
+  });
+
+  it('does not start payment after the requested service time', async () => {
+    const { service, stripe, money } = build({
+      ...accepted,
+      bookingRequest: { ...accepted.bookingRequest, desiredDate: new Date(Date.now() - 60_000) },
+    });
+    await expect(service.createDepositCheckout('c1', 'q1')).rejects.toThrow('service time has passed');
+    expect(stripe.checkout.sessions.create).not.toHaveBeenCalled();
+    expect(money.prepareCheckout).not.toHaveBeenCalled();
+  });
+
+  it('caps checkout expiration at the service start for an older accepted booking', async () => {
+    const desiredDate = new Date(Date.now() + 2 * 60 * 60_000);
+    const { service, stripe } = build({
+      ...accepted, bookingRequest: { ...accepted.bookingRequest, desiredDate },
+    });
+    await service.createDepositCheckout('c1', 'q1');
+    expect(stripe.checkout.sessions.create.mock.calls[0][0].expires_at)
+      .toBe(Math.floor(desiredDate.getTime() / 1000));
+  });
+
   it('charges the full quote amount', async () => {
     const { service, stripe, prisma, money } = build(accepted);
     await service.createDepositCheckout('c1', 'q1');

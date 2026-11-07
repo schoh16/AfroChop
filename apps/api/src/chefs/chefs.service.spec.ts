@@ -155,7 +155,7 @@ describe('ChefsService profile setup', () => {
     expect(args.where.AND).toEqual([{
       OR: [
         { chefDishes: { some: { dish: { name: { equals: 'Jollof rice', mode: 'insensitive' } } } } },
-        { menuEntries: { some: { name: { equals: 'Jollof rice', mode: 'insensitive' } } } },
+        { menuEntries: { some: { isAvailable: true, name: { equals: 'Jollof rice', mode: 'insensitive' } } } },
       ],
     }]);
     expect(args.where.serviceAreas.some.city).toEqual({ equals: 'Brooklyn', mode: 'insensitive' });
@@ -173,7 +173,7 @@ describe('ChefsService profile setup', () => {
           dishCountries: { some: { countryId: 'country-id' } },
         } } } },
         { menuEntries: { some: {
-          name: { equals: 'Jollof rice', mode: 'insensitive' }, cuisineCountryId: 'country-id',
+          isAvailable: true, name: { equals: 'Jollof rice', mode: 'insensitive' }, cuisineCountryId: 'country-id',
         } } },
       ],
     });
@@ -184,6 +184,19 @@ describe('ChefsService profile setup', () => {
     const [args] = prisma.chefProfile.findMany.mock.calls[0];
     expect(args.where).not.toHaveProperty('AND');
   });
+
+  it.each([{ q: 'Jollof' }, { foodName: 'Jollof' }, { countryId: 'country-id' }])(
+    'excludes unavailable menu items from discovery matches: %j',
+    async (query) => {
+      await service.search(query);
+      const [args] = prisma.chefProfile.findMany.mock.calls[0];
+      const constraints = args.where.AND as { OR: { menuEntries?: { some: object } }[] }[];
+      const menuFilters = constraints.flatMap(({ OR }) => OR)
+        .filter((filter) => filter.menuEntries).map((filter) => filter.menuEntries!.some);
+      expect(menuFilters.length).toBeGreaterThan(0);
+      for (const filter of menuFilters) expect(filter).toHaveProperty('isAvailable', true);
+    },
+  );
 
   it('uses the same visibility rules on direct profile links', async () => {
     prisma.chefProfile.findFirst.mockResolvedValue({ id: 'pending-chef', serviceTypes: [] });
