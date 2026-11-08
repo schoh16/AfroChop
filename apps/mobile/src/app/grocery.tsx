@@ -1,5 +1,5 @@
-import { Redirect } from 'expo-router';
+import App from '../../App';
 
 export default function GroceryRoute() {
-  return <Redirect href="/" />;
+  return <App groceryRoute />;
 }
