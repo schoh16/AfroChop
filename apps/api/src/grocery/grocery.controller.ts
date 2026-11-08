@@ -23,6 +23,7 @@ import type { AuthenticatedRequest } from '../auth/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/roles.guard.js';
 import { Roles } from '../auth/roles.decorator.js';
 import { GroceryService } from './grocery.service.js';
+import { GroceryRetiredGuard } from './grocery-retired.guard.js';
 import { MAX_PHOTO_BYTES, MediaService } from '../media/media.service.js';
 import type { UploadedPhoto } from '../media/media.service.js';
 import {
@@ -41,17 +42,17 @@ export class GroceryController {
     private readonly media: MediaService,
   ) {}
   @Get() @Header('Cache-Control', 'no-store') catalog() {
-    return this.grocery.catalog();
+    return { open: false, name: 'AfroChop', products: [], retired: true };
   }
 
   @Post('quotes')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, GroceryRetiredGuard)
   @Roles(UserRole.customer, UserRole.chef)
   quote(@Req() req: AuthenticatedRequest, @Body() dto: GroceryQuoteDto) {
     return this.grocery.quote(req.user.sub, dto);
   }
   @Post('orders/:id/checkout')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, GroceryRetiredGuard)
   @Roles(UserRole.customer, UserRole.chef)
   checkout(
     @Req() req: AuthenticatedRequest,
@@ -79,13 +80,13 @@ export class GroceryController {
 
   @Get('admin/settings')
   @Header('Cache-Control', 'no-store')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, GroceryRetiredGuard)
   @Roles(UserRole.admin)
   settings(@Req() req: AuthenticatedRequest) {
     return this.grocery.settings(req.user.sub);
   }
   @Put('admin/settings')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, GroceryRetiredGuard)
   @Roles(UserRole.admin)
   saveSettings(
     @Req() req: AuthenticatedRequest,
@@ -95,13 +96,13 @@ export class GroceryController {
   }
   @Get('admin/products')
   @Header('Cache-Control', 'no-store')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, GroceryRetiredGuard)
   @Roles(UserRole.admin)
   products(@Req() req: AuthenticatedRequest) {
     return this.grocery.products(req.user.sub);
   }
   @Post('admin/products')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, GroceryRetiredGuard)
   @Roles(UserRole.admin)
   createProduct(
     @Req() req: AuthenticatedRequest,
@@ -110,7 +111,7 @@ export class GroceryController {
     return this.grocery.saveProduct(req.user.sub, dto);
   }
   @Post('admin/products/image')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, GroceryRetiredGuard)
   @Roles(UserRole.admin)
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_PHOTO_BYTES, files: 1 } }))
@@ -122,7 +123,7 @@ export class GroceryController {
     return this.media.uploadGroceryProductImage(req.user.sub, file);
   }
   @Put('admin/products/:id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard, GroceryRetiredGuard)
   @Roles(UserRole.admin)
   updateProduct(
     @Req() req: AuthenticatedRequest,

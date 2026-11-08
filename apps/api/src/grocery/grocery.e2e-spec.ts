@@ -1,7 +1,6 @@
 import {
   type CanActivate,
   type ExecutionContext,
-  ForbiddenException,
   type INestApplication,
   UnauthorizedException,
   ValidationPipe,
@@ -40,8 +39,6 @@ describe('Grocery HTTP authorization and validation', () => {
     quote: vi.fn(),
     authorizeOwner: vi.fn(),
     orders: vi.fn(),
-    checkout: vi.fn(),
-    fulfill: vi.fn(),
   };
   const media = { uploadGroceryProductImage: vi.fn() };
   beforeEach(async () => {
@@ -105,7 +102,7 @@ describe('Grocery HTTP authorization and validation', () => {
           { productId: '11111111-1111-4111-8111-111111111111', quantity: 1.5 },
         ],
       })
-      .expect(400);
+      .expect(410);
     expect(service.quote).not.toHaveBeenCalled();
   });
   it('rejects missing price, package and allergen information', async () => {
@@ -117,84 +114,54 @@ describe('Grocery HTTP authorization and validation', () => {
         active: true,
         weightOz: -1,
       })
-      .expect(400);
+      .expect(410);
     expect(service.saveProduct).not.toHaveBeenCalled();
   });
-  it('returns the live catalog from the store service', async () => {
-    const catalog = { open: true, name: 'AfroChop Grocery Store', products: [{ id: 'p1' }] };
-    service.catalog.mockResolvedValue(catalog);
-    await request(app.getHttpServer()).get('/api/grocery').expect(200).expect(catalog);
-    expect(service.catalog).toHaveBeenCalledTimes(1);
-  });
-  it('quotes a valid US shipping cart for a signed-in customer', async () => {
-    service.quote.mockResolvedValue({ id: 'order', rates: [] });
-    const body = {
-      fulfillment: 'shipping',
-      destination: {
-        name: 'Ada Customer', street1: '1 Main Street', city: 'Baltimore', state: 'MD',
-        zip: '21201', phone: '+14105550100',
-      },
-      items: [{ productId: '11111111-1111-4111-8111-111111111111', quantity: 2 }],
-    };
-    await request(app.getHttpServer()).post('/api/grocery/quotes').send(body).expect(401);
-    await request(app.getHttpServer()).post('/api/grocery/quotes')
-      .auth('customer', { type: 'bearer' }).send(body).expect(201);
-    expect(service.quote).toHaveBeenCalledWith('user-id', expect.objectContaining({ fulfillment: 'shipping' }));
-  });
-  it('opens checkout only for customers and cooks', async () => {
-    service.checkout.mockResolvedValue({ orderId: 'order', url: 'https://checkout.stripe.com/test' });
-    const path = '/api/grocery/orders/11111111-1111-4111-8111-111111111111/checkout';
-    await request(app.getHttpServer()).post(path).auth('admin', { type: 'bearer' }).send({ rateId: 'rate' }).expect(403);
-    await request(app.getHttpServer()).post(path).auth('customer', { type: 'bearer' }).send({ rateId: 'rate' })
-      .expect(201).expect({ orderId: 'order', url: 'https://checkout.stripe.com/test' });
-    expect(service.checkout).toHaveBeenCalledWith('user-id', '11111111-1111-4111-8111-111111111111', 'rate');
-  });
-  it('lets the store administrator save a complete product', async () => {
-    service.saveProduct.mockResolvedValue({ id: 'product' });
+
+  it('blocks product updates after grocery retirement', async () => {
     await request(app.getHttpServer()).put('/api/grocery/admin/products/11111111-1111-4111-8111-111111111111')
       .auth('admin', { type: 'bearer' }).send({
         name: 'Palm oil', description: 'Red palm oil', ingredients: 'Palm oil', allergenNotice: 'See label',
         imageUrl: null, priceCents: 500, stock: 5, weightOz: 16, lengthIn: 4, widthIn: 4, heightIn: 8,
-        taxCode: 'txcd_40060003', active: true, expectedUpdatedAt: '2026-11-06T12:00:00Z',
-      }).expect(200);
-    expect(service.saveProduct).toHaveBeenCalledWith('user-id', expect.objectContaining({ priceCents: 500 }),
-      '11111111-1111-4111-8111-111111111111');
+        taxCode: 'txcd_10000000', active: true, expectedUpdatedAt: '2026-11-06T12:00:00Z',
+      }).expect(410);
+    expect(service.saveProduct).not.toHaveBeenCalled();
   });
-  it('authorizes the owner before storing product images', async () => {
+  it('blocks product image uploads even for administrators', async () => {
     await request(app.getHttpServer())
       .post('/api/grocery/admin/products/image')
-      .set('Authorization', 'Bearer customer')
+      .set('Authorization', 'customer')
       .attach('file', Buffer.from('photo'), { filename: 'product.jpg', contentType: 'image/jpeg' })
       .expect(403);
+    expect(service.authorizeOwner).not.toHaveBeenCalled();
     expect(media.uploadGroceryProductImage).not.toHaveBeenCalled();
 
-    service.authorizeOwner.mockRejectedValueOnce(new ForbiddenException('Only the AfroChop store owner may sell groceries.'));
     await request(app.getHttpServer())
       .post('/api/grocery/admin/products/image')
-      .set('Authorization', 'Bearer admin')
+      .set('Authorization', 'admin')
       .attach('file', Buffer.from('photo'), { filename: 'product.jpg', contentType: 'image/jpeg' })
-      .expect(403);
+      .expect(410);
     expect(media.uploadGroceryProductImage).not.toHaveBeenCalled();
 
     media.uploadGroceryProductImage.mockResolvedValue({ imageUrl: 'https://images.example.test/product.jpg' });
     await request(app.getHttpServer())
       .post('/api/grocery/admin/products/image')
-      .set('Authorization', 'Bearer admin')
+      .set('Authorization', 'admin')
       .attach('file', Buffer.from('photo'), { filename: 'product.jpg', contentType: 'image/jpeg' })
-      .expect(201).expect({ imageUrl: 'https://images.example.test/product.jpg' });
-    expect(media.uploadGroceryProductImage).toHaveBeenCalledWith('user-id', expect.anything());
+      .expect(410);
+    expect(service.authorizeOwner).not.toHaveBeenCalled();
+    expect(media.uploadGroceryProductImage).not.toHaveBeenCalled();
   });
-  it('requires a tracking number format when fulfilling', async () => {
-    await request(app.getHttpServer()).patch('/api/grocery/admin/orders/11111111-1111-4111-8111-111111111111/fulfill')
-      .auth('admin', { type: 'bearer' }).send({ trackingNumber: '<script>' }).expect(400);
-    expect(service.fulfill).not.toHaveBeenCalled();
-    service.fulfill.mockResolvedValue({ saved: true });
-    await request(app.getHttpServer()).patch('/api/grocery/admin/orders/11111111-1111-4111-8111-111111111111/fulfill')
-      .auth('admin', { type: 'bearer' }).send({ trackingNumber: '9400 1000 0000 0000 0000 00' }).expect(200);
-  });
-  it('lists a customer order history', async () => {
-    service.orders.mockResolvedValue([{ id: 'order' }]);
+  it('keeps the public catalog closed and preserves historical order access', async () => {
+    await request(app.getHttpServer()).get('/api/grocery').expect(200)
+      .expect({ open: false, name: 'AfroChop', products: [], retired: true });
+    expect(service.catalog).not.toHaveBeenCalled();
+    service.orders.mockResolvedValue([{ id: 'historical' }]);
     await request(app.getHttpServer()).get('/api/grocery/orders/mine').auth('customer', { type: 'bearer' })
-      .expect(200).expect([{ id: 'order' }]);
+      .expect(200).expect([{ id: 'historical' }]);
+  });
+  it('blocks checkout before creating a new Stripe session', async () => {
+    await request(app.getHttpServer()).post('/api/grocery/orders/11111111-1111-4111-8111-111111111111/checkout')
+      .auth('customer', { type: 'bearer' }).send({ rateId: 'rate' }).expect(410);
   });
 });

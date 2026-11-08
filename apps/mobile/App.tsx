@@ -25,7 +25,6 @@ PrimaryButton
 import { CalendarPicker,parseDateKey } from './components/CalendarPicker';
 import { ChefWorkspace } from './components/ChefWorkspace';
 import { CustomerRequests } from './components/CustomerRequests';
-import { GroceryStore } from './components/GroceryStore';
 import { SellerGallery } from './components/SellerPhotos';
 import { LocationDropdowns } from './components/LocationDropdowns';
 import { SelectionDropdown } from './components/SelectionDropdown';
@@ -155,7 +154,7 @@ async function openChefSocialProfile(platform: string, link: string) {
   await Linking.openURL(url.toString());
 }
 
-export default function App({ adminRoute = false, groceryRoute = false }: { adminRoute?: boolean; groceryRoute?: boolean }) {
+export default function App({ adminRoute = false }: { adminRoute?: boolean }) {
   const [adminSession, setAdminSession] = useState<AccountSession | null>(null);
   const [countries, setCountries] = useState<Country[]>([]);
   const [marketCountries, setMarketCountries] = useState<MarketCountry[]>([]);
@@ -188,7 +187,6 @@ export default function App({ adminRoute = false, groceryRoute = false }: { admi
   const [showCustomerMenu, setShowCustomerMenu] = useState(false);
   const [showMessages, setShowMessages] = useState(false);
   const [showRequests, setShowRequests] = useState(false);
-  const [showGrocery, setShowGrocery] = useState(groceryRoute);
   const [messagePartner, setMessagePartner] = useState<MessagePartner | null>(null);
   const [customerAuthMessage, setCustomerAuthMessage] = useState<string | null>(null);
   const [customerSessionToken, setCustomerSessionToken] = useState<string | null>(null);
@@ -353,7 +351,6 @@ export default function App({ adminRoute = false, groceryRoute = false }: { admi
     setGuideRole(null);
     setCustomerOnboarding(false);
     setShowRequests(false);
-    setShowGrocery(false);
     setShowMessages(false);
     setMessagePartner(null);
   }
@@ -373,7 +370,6 @@ export default function App({ adminRoute = false, groceryRoute = false }: { admi
     setShowCustomerMenu(false);
     setShowMessages(false);
     setShowRequests(false);
-    setShowGrocery(false);
     setMessagePartner(null);
     setSelectedChef(null);
     setChefReviews(null);
@@ -937,17 +933,11 @@ export default function App({ adminRoute = false, groceryRoute = false }: { admi
       ) : farmerSessionToken ? (
         <View style={styles.content}>
           <Text style={styles.title}>AfroChop groceries</Text>
-          <Text style={styles.signupIntro}>AfroChop now connects customers with African cooks, and groceries are sold only by AfroChop. Contact support to update your account; your historical records are retained.</Text>
+          <Text style={styles.signupIntro}>AfroChop now connects customers with African cooks. Grocery selling is no longer available. Contact support to update your account; your historical records are retained.</Text>
           <PrimaryButton label="Sign Out" onPress={() => { void signOutAccount().catch((error: unknown) => {
             setCustomerAuthMessage(error instanceof Error ? error.message : 'Could not sign out.');
           }); }} />
         </View>
-      ) : customerSessionToken && showGrocery ? (
-        <GroceryStore
-          token={customerSessionToken}
-          apiBaseUrl={apiBaseUrl}
-          onBack={() => setShowGrocery(false)}
-        />
       ) : customerSessionToken && showRequests ? (
         <CustomerRequests
           token={customerSessionToken}
@@ -1055,17 +1045,6 @@ export default function App({ adminRoute = false, groceryRoute = false }: { admi
                 accessibilityRole="button"
                 onPress={() => {
                   setShowCustomerMenu(false);
-                  setShowGrocery(true);
-                }}
-                style={styles.customerMenuItem}
-              >
-                <Text style={styles.customerMenuItemTitle}>🛒 Grocery store</Text>
-                <Text style={styles.customerMenuItemDetail}>Order African pantry staples shipped to your door</Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => {
-                  setShowCustomerMenu(false);
                   setMessagePartner(null);
                   setShowMessages(true);
                 }}
@@ -1086,19 +1065,6 @@ export default function App({ adminRoute = false, groceryRoute = false }: { admi
           ) : null}
         </View>
 
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Open the AfroChop grocery store"
-          onPress={() => setShowGrocery(true)}
-          style={styles.groceryBanner}
-        >
-          <Text style={styles.groceryBannerIcon}>🛒</Text>
-          <View style={styles.groceryBannerCopy}>
-            <Text style={styles.groceryBannerTitle}>AfroChop Groceries</Text>
-            <Text style={styles.groceryBannerDetail}>African pantry staples, shipped to your door</Text>
-          </View>
-          <Text style={styles.groceryBannerArrow}>›</Text>
-        </Pressable>
 
         <View style={styles.locationBlock}>
           <Text style={styles.locationLabel}>FIND COOKS NEAR</Text>
@@ -1954,15 +1920,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   homeLinkText: { color: colors.forest, fontSize: 12, fontWeight: '800', marginLeft: 6 },
-  groceryBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16, padding: 14,
-    borderRadius: 14, backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#fdba74',
-  },
-  groceryBannerIcon: { fontSize: 28 },
-  groceryBannerCopy: { flex: 1 },
-  groceryBannerTitle: { fontWeight: '800', fontSize: 16, color: '#431407' },
-  groceryBannerDetail: { color: '#7c2d12', fontSize: 13, marginTop: 2 },
-  groceryBannerArrow: { fontSize: 26, color: '#c2410c', fontWeight: '700' },
   locationBlock: {
     backgroundColor: '#fff',
     borderColor: '#EEE6DA',

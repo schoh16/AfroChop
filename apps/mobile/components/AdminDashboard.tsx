@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, FlatList, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { PrimaryButton } from './AuthUi';
 import { StaffReviews } from './StaffReviews';
-import { GroceryAdmin } from './GroceryAdmin';
 import { CalendarPicker, toDateKey } from './CalendarPicker';
 import { marketplaceApi } from '../lib/marketplaceApi';
 import { getCurrentSession } from '../lib/session';
@@ -28,7 +27,6 @@ export function AdminDashboard({ apiBaseUrl, token, name, onSignOut }: {
   const [notice, setNotice] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
   const [showReviews, setShowReviews] = useState(false);
-  const [showGrocery, setShowGrocery] = useState(false);
 
   const fetchQueue = useCallback(async () => {
     const session = await getCurrentSession();
@@ -77,24 +75,18 @@ export function AdminDashboard({ apiBaseUrl, token, name, onSignOut }: {
     <View style={s.header}>
       <View style={s.headerText}>
         <Text style={s.eyebrow}>AFROCHOP ADMINISTRATION</Text>
-        <Text style={s.title}>{showGrocery ? 'Grocery store' : showReviews ? 'Staff reviews' : 'Cook applications'}</Text>
+        <Text style={s.title}>Cook applications</Text>
         <Text style={s.body}>Welcome, {name}. Private staff workspace.</Text>
       </View>
       <PrimaryButton label="Sign Out" secondary loading={signingOut} onPress={() => void signOut()} />
     </View>
     {error ? <Text accessibilityRole="alert" style={s.error}>{error}</Text> : null}
     {notice ? <Text accessibilityRole="alert" style={s.notice}>{notice}</Text> : null}
-    <View style={s.sectionButtons}>
-      <PrimaryButton label={showReviews ? 'Back to cook applications' : 'Verification and refund reviews'} secondary
-        onPress={() => { setSelected(null); setShowGrocery(false); setShowReviews((value) => !value); }} />
-      <PrimaryButton label={showGrocery ? 'Back to cook applications' : '🛒 Grocery store'} secondary
-        onPress={() => { setSelected(null); setShowReviews(false); setShowGrocery((value) => !value); }} />
-    </View>
+    <PrimaryButton label={showReviews ? 'Back to cook applications' : 'Verification and refund reviews'} secondary
+      onPress={() => { setSelected(null); setShowReviews((value) => !value); }} />
   </>;
   return <View style={s.page}>
-    {showGrocery ? <>{header}<ScrollView contentContainerStyle={s.list} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
-      <GroceryAdmin api={api} apiBaseUrl={apiBaseUrl} token={token} /></ScrollView></> :
-    showReviews ? <>{header}<StaffReviews api={api} applications={applications} /></> :
+    {showReviews ? <>{header}<StaffReviews api={api} applications={applications} /></> :
     selected ? <>{header}<ApplicationDetail key={selected.id} application={selected} api={api}
       onBack={() => { setSelected(null); }}
       onSaved={(updated) => {
@@ -310,7 +302,6 @@ const s = StyleSheet.create({
   notes: { minHeight: 120, textAlignVertical: 'top' },
   loading: { padding: 24, gap: 10, alignItems: 'center' },
   list: { padding: 20, gap: 12 },
-  sectionButtons: { paddingHorizontal: 20, gap: 8 },
   card: { backgroundColor: '#fff', padding: 18, borderRadius: 16, gap: 10 },
   detail: { padding: 20, gap: 16 },
   photo: { width: 100, height: 100, borderRadius: 12 },
